@@ -23,12 +23,10 @@ const { useNavigate } = ReactRouterDOM as any;
 const Inquiry: React.FC = () => {
   const navigate = useNavigate();
   
-  // Auth State
+  // ... (Existing State) ...
   const [parentCivilId, setParentCivilId] = useState(localStorage.getItem('ozr_parent_id') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('ozr_parent_id'));
   const [authLoading, setAuthLoading] = useState(false);
-
-  // Dashboard State
   const [myChildren, setMyChildren] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -37,10 +35,10 @@ const Inquiry: React.FC = () => {
   const [showDigitalId, setShowDigitalId] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false); // NEW: Success Modal for Booking
   
-  // Tabs
+  // Tabs including 'visits'
   const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'attendance' | 'archive' | 'behavior' | 'observations' | 'visits'>('overview');
   
-  // Data
+  // ... (Existing Data State) ...
   const [history, setHistory] = useState<ExcuseRequest[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<{ date: string, status: AttendanceStatus }[]>([]);
   const [behaviorHistory, setBehaviorHistory] = useState<BehaviorRecord[]>([]);
@@ -69,7 +67,7 @@ const Inquiry: React.FC = () => {
   const [isBooking, setIsBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState<Appointment | null>(null);
 
-  // ... (Auth & Data Loading Functions - Kept same) ...
+  // ... (Authentication & Load Logic) ...
   const handleLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!parentCivilId) return;

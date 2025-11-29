@@ -1,15 +1,14 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { QrCode, CheckCircle, AlertCircle, Loader2, User, Clock, RefreshCw, XCircle, Printer, List, ShieldCheck, FileText, LayoutGrid, Sparkles, BrainCircuit, Calendar, ArrowRight, Bell, LogOut, Home, X } from 'lucide-react';
+import { QrCode, CheckCircle, AlertCircle, Loader2, User, Clock, RefreshCw, XCircle, Printer, List, ShieldCheck, FileText, LayoutGrid, Sparkles, BrainCircuit, Calendar, ArrowRight, Bell, LogOut, Home, X, Camera } from 'lucide-react';
 import { checkInVisitor, getDailyAppointments, generateSmartContent } from '../../services/storage';
 import { Appointment } from '../../types';
 
-// Declare global Html5QrcodeScanner
-declare var Html5QrcodeScanner: any;
+// Declare global Html5Qrcode
+declare var Html5Qrcode: any;
 
 const GateScanner: React.FC = () => {
-  // View State - Default is now SCANNER (Always Ready)
-  // We use overlays for logs and analytics to keep camera mounted
+  // View State - Scanner is default and always active
   const [showLog, setShowLog] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   
@@ -30,6 +29,7 @@ const GateScanner: React.FC = () => {
 
   const scannerRef = useRef<any>(null);
   const isScannerRunning = useRef<boolean>(false);
+  const isProcessing = useRef<boolean>(false); // Lock to prevent multiple scans
 
   // Stats
   const stats = useMemo(() => {
@@ -48,51 +48,52 @@ const GateScanner: React.FC = () => {
     fetchDailyVisits();
   }, []);
 
-  // Scanner Logic - Runs ONCE on mount
+  // --- SCANNER INITIALIZATION ---
   useEffect(() => {
-    const initScanner = () => {
-        if (isScannerRunning.current) return;
-        
-        // Slight delay to ensure DOM is ready
-        setTimeout(() => {
-            if (document.getElementById('reader')) {
-                const onScanSuccess = (decodedText: string, decodedResult: any) => {
-                    // Do not clear scanner here, just pause processing visually
-                    if (scanResult !== decodedText) {
+    const startScanner = async () => {
+        // Prevent double init
+        if (isScannerRunning.current || !document.getElementById('reader')) return;
+
+        try {
+            const html5QrCode = new Html5Qrcode("reader");
+            scannerRef.current = html5QrCode;
+
+            await html5QrCode.start(
+                { facingMode: "environment" }, // Force Rear Camera
+                {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 },
+                    aspectRatio: 1.0
+                },
+                (decodedText: string) => {
+                    // Success Callback
+                    if (!isProcessing.current) {
+                        isProcessing.current = true; // Lock
                         setScanResult(decodedText);
                         handleScanProcess(decodedText);
                     }
-                };
-    
-                const onScanFailure = (error: any) => {
-                    // handle error quietly
-                };
-    
-                try {
-                    const html5QrcodeScanner = new Html5QrcodeScanner(
-                        "reader",
-                        { fps: 10, qrbox: { width: 250, height: 250 } },
-                        false
-                    );
-                    html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-                    scannerRef.current = html5QrcodeScanner;
-                    isScannerRunning.current = true;
-                } catch (e) {
-                    console.error("Scanner init error", e);
+                },
+                (errorMessage: string) => {
+                    // Ignore scan errors (frames without QR)
                 }
-            }
-        }, 500);
+            );
+            isScannerRunning.current = true;
+        } catch (err) {
+            console.error("Camera start error:", err);
+            setError("تعذر تشغيل الكاميرا. يرجى التأكد من السماح بالوصول للكاميرا في إعدادات المتصفح.");
+        }
     };
 
-    initScanner();
+    // Slight delay to ensure DOM mount
+    const timer = setTimeout(startScanner, 500);
 
-    // Cleanup only on component unmount
     return () => {
-        if (scannerRef.current) {
-            try { 
-                scannerRef.current.clear().catch(() => {}); 
+        clearTimeout(timer);
+        if (scannerRef.current && isScannerRunning.current) {
+            scannerRef.current.stop().then(() => {
+                scannerRef.current.clear();
                 isScannerRunning.current = false;
-            } catch(e) {}
+            }).catch((err: any) => console.error("Stop failed", err));
         }
     };
   }, []);
@@ -104,7 +105,7 @@ const GateScanner: React.FC = () => {
       
       try {
           const today = new Date().toISOString().split('T')[0];
-          // Re-fetch to be sure
+          // Re-fetch to be sure we have latest data
           const appointments = await getDailyAppointments(today); 
           setTodaysVisits(appointments);
           
@@ -151,7 +152,7 @@ const GateScanner: React.FC = () => {
       setScannedAppointment(null);
       setError(null);
       setCheckInSuccess(false);
-      // Scanner stays running in background, just resetting state
+      isProcessing.current = false; // Unlock for next scan
   };
 
   const handleGenerateAnalysis = async () => {
@@ -284,7 +285,7 @@ const GateScanner: React.FC = () => {
                 </div>
                 <div>
                     <h1 className="text-lg font-bold text-slate-900">بوابة الأمن الذكية</h1>
-                    <p className="text-xs text-slate-500 font-medium">الماسح الضوئي نشط دائماً</p>
+                    <p className="text-xs text-slate-500 font-medium">الماسح الضوئي نشط دائماً (الكاميرا الخلفية)</p>
                 </div>
             </div>
             
@@ -307,7 +308,19 @@ const GateScanner: React.FC = () => {
                     <div className="w-2 h-2 bg-white rounded-full"></div> مباشر
                 </div>
                 
-                {/* Check-in Status Overlay */}
+                {/* Error Banner inside scanner if camera fails */}
+                {!isScannerRunning.current && error && (
+                    <div className="absolute inset-0 z-30 bg-slate-900 flex flex-col items-center justify-center p-8 text-center text-white">
+                        <AlertCircle size={48} className="text-red-500 mb-4" />
+                        <p className="font-bold mb-2">تعذر الوصول للكاميرا</p>
+                        <p className="text-xs text-slate-400 max-w-xs">{error}</p>
+                        <button onClick={() => window.location.reload()} className="mt-6 bg-white/10 hover:bg-white/20 px-6 py-2 rounded-xl font-bold transition-colors">
+                            إعادة المحاولة
+                        </button>
+                    </div>
+                )}
+
+                {/* Check-in Status Overlay (Results) */}
                 {scanResult && (
                     <div className="absolute inset-0 z-20 bg-slate-900/95 flex flex-col items-center justify-center p-8 animate-fade-in text-center">
                         {loading ? (
@@ -321,7 +334,7 @@ const GateScanner: React.FC = () => {
                         )}
 
                         <h3 className="text-2xl font-bold text-white mb-2">
-                            {checkInSuccess ? 'تم تسجيل الدخول' : error ? 'خطأ في التحقق' : 'تأكيد البيانات'}
+                            {checkInSuccess ? 'تم تسجيل الدخول' : error ? 'تنبيه' : 'تأكيد البيانات'}
                         </h3>
                         
                         <p className={`text-sm mb-6 ${checkInSuccess ? 'text-emerald-400' : error ? 'text-red-400' : 'text-slate-400'}`}>

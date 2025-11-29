@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { Search, Phone, MessageCircle, X, Loader2, BookUser, Copy, Check, School, Smartphone, Inbox, LayoutGrid, HeartHandshake, UserPlus, Users, ArrowRight, ClipboardList, Send, FileText, Printer, Calendar, Plus, ShieldAlert, FileWarning, Eye, TrendingDown, Clock, AlertCircle, CheckCircle, ArrowLeft, RefreshCw, Activity, GitCommit, UserCheck } from 'lucide-react';
-import { getStudents, getStudentAttendanceHistory, getReferrals, updateReferralStatus, addGuidanceSession, getGuidanceSessions, getBehaviorRecords, getStudentObservations, getConsecutiveAbsences } from '../../services/storage';
+import { Search, Phone, MessageCircle, X, Loader2, BookUser, Copy, Check, School, Smartphone, Inbox, LayoutGrid, HeartHandshake, UserPlus, Users, ArrowRight, ClipboardList, Send, FileText, Printer, Calendar, Plus, ShieldAlert, FileWarning, Eye, TrendingDown, Clock, AlertCircle, CheckCircle, ArrowLeft, RefreshCw, Activity, GitCommit, UserCheck, Sparkles } from 'lucide-react';
+import { getStudents, getStudentAttendanceHistory, getReferrals, updateReferralStatus, addGuidanceSession, getGuidanceSessions, getBehaviorRecords, getStudentObservations, getConsecutiveAbsences, generateGuidancePlan } from '../../services/storage';
 import { Student, StaffUser, AttendanceStatus, Referral, GuidanceSession, BehaviorRecord, StudentObservation } from '../../types';
 import { GRADES } from '../../constants';
 
@@ -52,6 +52,7 @@ const StaffStudents: React.FC = () => {
   const [sessionTopic, setSessionTopic] = useState('');
   const [sessionRecs, setSessionRecs] = useState('');
   const [sessionType, setSessionType] = useState<'individual' | 'group' | 'parent_meeting'>('individual');
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false); // NEW
 
   const [referralReplyMode, setReferralReplyMode] = useState<string | null>(null);
   const [referralOutcome, setReferralOutcome] = useState('');
@@ -77,8 +78,6 @@ const StaffStudents: React.FC = () => {
             !isDirectoryMode ? getConsecutiveAbsences() : Promise.resolve([])
         ]);
         setStudents(s);
-        // Filter referrals specifically for the Counselor (from Deputy/Admin)
-        // Only show pending or in_progress. Resolved/Returned are history.
         setReferrals(r.filter(ref => ref.status === 'pending' || ref.status === 'in_progress'));
         setSessions(g);
         setRiskList(risks);
@@ -159,12 +158,27 @@ const StaffStudents: React.FC = () => {
 
   const handleReturnReferral = async (id: string) => {
       if (!referralOutcome.trim()) { alert("يرجى كتابة المرئيات قبل الإعادة."); return; }
-      // This is the link: Status becomes 'returned_to_deputy'
       await updateReferralStatus(id, 'returned_to_deputy', referralOutcome);
       setReferralReplyMode(null);
       setReferralOutcome('');
       fetchData();
       alert("تم إعادة الحالة لوكيل الشؤون الطلابية مع التقرير.");
+  };
+
+  const handleGeneratePlan = async () => {
+      if(!selectedStudent) return;
+      setIsGeneratingPlan(true);
+      try {
+          // Summarize history
+          const summary = `
+             غياب: ${studentHistory.filter(h=>h.status==='ABSENT').length} أيام.
+             مخالفات: ${studentBehaviors.map(b=>b.violationName).join(', ')}.
+             ملاحظات: ${studentObservations.map(o=>o.content).join(', ')}.
+          `;
+          const plan = await generateGuidancePlan(selectedStudent.name, summary);
+          setSessionRecs(plan);
+      } catch(e) { alert("فشل التوليد"); }
+      finally { setIsGeneratingPlan(false); }
   };
 
   const handleSaveSession = async () => {
@@ -899,7 +913,10 @@ const StaffStudents: React.FC = () => {
                           </button>
                           
                           {showSessionForm && (
-                              <div className="bg-white p-6 rounded-3xl border-2 border-purple-100 shadow-lg animate-fade-in-up">
+                              <div className="bg-white p-6 rounded-3xl border-2 border-purple-100 shadow-lg animate-fade-in-up relative">
+                                  <button onClick={handleGeneratePlan} disabled={isGeneratingPlan} className="absolute top-6 left-6 text-xs bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg border border-purple-200 hover:bg-purple-100 flex items-center gap-2 font-bold">
+                                      {isGeneratingPlan ? <Loader2 className="animate-spin" size={14}/> : <Sparkles size={14}/>} دراسة حالة آلية
+                                  </button>
                                   <h3 className="font-bold text-purple-900 mb-4 flex items-center gap-2"><ClipboardList size={20}/> تفاصيل الجلسة</h3>
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                       <div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Briefcase, AlertTriangle, Plus, Search, Loader2, X, Send, Sparkles, 
@@ -17,7 +18,8 @@ import {
   updateReferralStatus,
   getConsecutiveAbsences,
   resolveAbsenceAlert,
-  sendAdminInsight
+  sendAdminInsight,
+  suggestBehaviorAction
 } from '../../services/storage';
 import { Student, BehaviorRecord, StaffUser, AdminInsight, Referral } from '../../types';
 import { BEHAVIOR_VIOLATIONS, GRADES } from '../../constants';
@@ -100,6 +102,7 @@ const StaffDeputy: React.FC = () => {
   const [selectedViolation, setSelectedViolation] = useState('');
   const [actionTaken, setActionTaken] = useState('');
   const [notes, setNotes] = useState('');
+  const [isGettingSuggestion, setIsGettingSuggestion] = useState(false); // NEW
   
   // Printing State
   const [printMode, setPrintMode] = useState<'none' | 'commitment' | 'daily' | 'summons' | 'monthly'>('none');
@@ -198,6 +201,20 @@ const StaffDeputy: React.FC = () => {
       setActionTaken(rec.actionTaken);
       setNotes(rec.notes || '');
       setActiveView('add');
+  };
+
+  const getActionSuggestion = async () => {
+      if (!selectedViolation) { alert("يرجى اختيار نوع المخالفة أولاً"); return; }
+      
+      const student = students.find(s => s.id === selectedStudentId);
+      const previousViolations = records.filter(r => r.studentId === student?.studentId).length;
+      
+      setIsGettingSuggestion(true);
+      try {
+          const suggestion = await suggestBehaviorAction(selectedViolation, previousViolations);
+          setNotes(suggestion);
+      } catch (e) { alert("تعذر الحصول على اقتراح"); }
+      finally { setIsGettingSuggestion(false); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -537,12 +554,23 @@ const StaffDeputy: React.FC = () => {
               </div>
               <div className="space-y-4">
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">نوع المخالفة</label><select required value={selectedViolation} onChange={e => setSelectedViolation(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"><option value="">-- حدد المخالفة --</option>{BEHAVIOR_VIOLATIONS.find(v => v.degree === selectedDegree)?.violations.map(vio => <option key={vio} value={vio}>{vio}</option>)}</select></div>
+                
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">الإجراء المتخذ</label><select required value={actionTaken} onChange={e => setActionTaken(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"><option value="">-- حدد الإجراء --</option>{BEHAVIOR_VIOLATIONS.find(v => v.degree === selectedDegree)?.actions.map(act => <option key={act} value={act}>{act}</option>)}</select></div>
+                
                 <div className="flex gap-2">
                   {showCommitmentPrint && <button type="button" onClick={handlePrintCommitment} className="flex-1 bg-amber-50 text-amber-700 px-4 py-2.5 rounded-xl border border-amber-200 font-bold flex items-center justify-center gap-2"><Printer size={16} /> طباعة التعهد</button>}
                   {showSummonsPrint && <button type="button" onClick={handlePrintSummons} className="flex-1 bg-orange-50 text-orange-700 px-4 py-2.5 rounded-xl border border-orange-200 font-bold flex items-center justify-center gap-2"><Printer size={16} /> طباعة الاستدعاء</button>}
                 </div>
-                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">ملاحظات</label><textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm min-h-[80px]" placeholder="اختياري..."/></div>
+                
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">ملاحظات إضافية</label>
+                    <div className="relative">
+                        <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm min-h-[80px]" placeholder="اختياري..."/>
+                        <button type="button" onClick={getActionSuggestion} disabled={isGettingSuggestion} className="absolute bottom-3 left-3 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded hover:bg-purple-200 flex items-center gap-1">
+                            {isGettingSuggestion ? <Loader2 className="animate-spin" size={12}/> : <Sparkles size={12}/>} اقتراح ذكي
+                        </button>
+                    </div>
+                </div>
               </div>
               <div className="pt-4 border-t border-slate-100 flex gap-4">
                 <button type="button" onClick={() => { resetForm(); setActiveView('menu'); }} className="flex-1 py-4 bg-slate-100 text-slate-600 font-bold rounded-xl">إلغاء</button>

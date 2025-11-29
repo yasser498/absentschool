@@ -1,3 +1,4 @@
+
 import { supabase } from '../supabaseClient';
 import { SchoolNews, Student, ExcuseRequest, RequestStatus, StaffUser, AttendanceRecord, AttendanceStatus, ClassAssignment, ResolvedAlert, BehaviorRecord, AdminInsight, Referral, StudentObservation, GuidanceSession, StudentPoint, ParentLink, AppNotification } from "../types";
 import { GoogleGenAI } from "@google/genai";
@@ -45,7 +46,80 @@ export const generateSmartContent = async (prompt: string, systemInstruction?: s
   }
 };
 
-// --- AI Sentiment Analysis ---
+// --- SPECIALIZED AI FUNCTIONS ---
+
+// 1. For Admin: Executive School Report
+export const generateExecutiveReport = async (stats: any) => {
+    const prompt = `
+    بصفتك مستشاراً تربويًا وإداريًا خبيراً، قم بإعداد "تقرير تنفيذي شامل" لإدارة المدرسة بناءً على البيانات التالية:
+    - نسبة الحضور العامة: ${stats.attendanceRate}%
+    - نسبة الغياب: ${stats.absenceRate}%
+    - نسبة التأخر: ${stats.latenessRate}%
+    - إجمالي المخالفات السلوكية: ${stats.totalViolations}
+    - عدد الطلاب في دائرة الخطر (غياب متكرر): ${stats.riskCount}
+    - الصف الأكثر غياباً: ${stats.mostAbsentGrade}
+    
+    المطلوب:
+    1. ملخص تنفيذي لحالة الانضباط في المدرسة.
+    2. تحليل نقاط الضعف (أين تكمن المشكلة الأكبر؟).
+    3. ثلاث توصيات عملية ومحددة للإدارة لتحسين الوضع الأسبوع القادم.
+    
+    الصيغة: تقرير رسمي مهني، نقاط واضحة، لغة عربية فصحى قوية.
+    `;
+    return await generateSmartContent(prompt);
+};
+
+// 2. For Parent: Smart Student Report
+export const generateSmartStudentReport = async (studentName: string, attendance: any[], behavior: any[], points: number) => {
+    const absentDays = attendance.filter(a => a.status === 'ABSENT').length;
+    const lateDays = attendance.filter(a => a.status === 'LATE').length;
+    const behaviorCount = behavior.length;
+    
+    const prompt = `
+    اكتب رسالة تربوية موجهة لولي أمر الطالب "${studentName}".
+    البيانات:
+    - الغياب: ${absentDays} أيام.
+    - التأخر: ${lateDays} أيام.
+    - المخالفات السلوكية: ${behaviorCount}.
+    - نقاط التميز: ${points}.
+    
+    الأسلوب:
+    - إذا كان الأداء ممتازاً (غياب قليل، نقاط عالية): كن مشجعاً جداً وفخوراً.
+    - إذا كان هناك ملاحظات: كن لطيفاً ولكن واضحاً في التنبيه على ضرورة التحسن بأسلوب تربوي غير منفر.
+    - اختم بنصيحة قصيرة.
+    
+    اجعل الرسالة تبدو وكأنها من "المرشد الطلابي الذكي".
+    `;
+    return await generateSmartContent(prompt);
+};
+
+// 3. For Deputy: Behavior Action Suggestion
+export const suggestBehaviorAction = async (violationName: string, historyCount: number) => {
+    const prompt = `
+    طالب قام بمخالفة: "${violationName}".
+    هذه هي المرة رقم ${historyCount + 1} التي يرتكب فيها مخالفة.
+    
+    بناءً على قواعد السلوك والمواظبة المدرسية العامة:
+    1. ما هو الإجراء النظامي المقترح؟ (تدرج في العقوبة إذا كان مكرراً).
+    2. نصيحة قصيرة يمكن توجيهها للطالب أثناء التحقيق.
+    `;
+    return await generateSmartContent(prompt);
+};
+
+// 4. For Counselor: Case Study
+export const generateGuidancePlan = async (studentName: string, history: any) => {
+    const prompt = `
+    اكتب مسودة "خطة علاجية فردية" للطالب ${studentName}.
+    المشاكل المرصودة: ${history}.
+    
+    المطلوب:
+    1. تشخيص مبدئي للمشكلة.
+    2. هدف الجلسة الإرشادية القادمة.
+    3. خطوتان عمليتان لتعديل السلوك.
+    `;
+    return await generateSmartContent(prompt);
+};
+
 export const analyzeSentiment = async (text: string): Promise<'positive' | 'negative' | 'neutral'> => {
     try {
         const res = await generateSmartContent(`Analyze the sentiment of this text (Student Report). Return ONLY one word: 'positive', 'negative', or 'neutral'. Text: "${text}"`);

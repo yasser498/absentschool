@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -5,13 +6,13 @@ import {
   FileText, Clock, CheckCircle, Sparkles, Calendar, AlertTriangle, Loader2, BrainCircuit, 
   Search, Settings, Printer, BarChart2, Users, Settings2, Trash2, Wifi, BellRing, Phone, 
   ShieldAlert, Send, Megaphone, Activity, LayoutGrid, Save, School, FileSpreadsheet, X, 
-  Database, RefreshCw, Star, Newspaper, Plus 
+  Database, RefreshCw, Star, Newspaper, Plus, ClipboardCheck
 } from 'lucide-react';
 import { 
   getRequests, getStudents, getConsecutiveAbsences, resolveAbsenceAlert, getBehaviorRecords, 
   sendAdminInsight, testSupabaseConnection, getAttendanceRecords, generateSmartContent, 
   clearAttendance, clearRequests, clearStudents, clearBehaviorRecords, clearAdminInsights, 
-  clearReferrals, getTopStudents, addSchoolNews, getSchoolNews, deleteSchoolNews 
+  clearReferrals, getTopStudents, addSchoolNews, getSchoolNews, deleteSchoolNews, generateExecutiveReport 
 } from '../../services/storage';
 import { RequestStatus, ExcuseRequest, Student, BehaviorRecord, AttendanceRecord, SchoolNews } from '../../types';
 
@@ -34,6 +35,7 @@ const Dashboard: React.FC = () => {
   const [showDetails, setShowDetails] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [behaviorAnalysis, setBehaviorAnalysis] = useState<string | null>(null);
+  const [executiveReport, setExecutiveReport] = useState<string | null>(null); // New: Executive Report State
   const [directiveContent, setDirectiveContent] = useState('');
   const [directiveTarget, setDirectiveTarget] = useState<'deputy' | 'counselor'>('deputy');
   const [sendingDirective, setSendingDirective] = useState(false);
@@ -85,7 +87,40 @@ const Dashboard: React.FC = () => {
   const saveSchoolSettings = () => { localStorage.setItem('school_name', tempSchoolName); localStorage.setItem('school_logo', tempSchoolLogo); setSchoolName(tempSchoolName); setSchoolLogo(tempSchoolLogo); alert("تم حفظ إعدادات المدرسة بنجاح"); };
   const saveAIConfig = () => { const config = { provider: 'google', apiKey: apiKey, model: 'gemini-2.5-flash' }; localStorage.setItem('ozr_ai_config', JSON.stringify(config)); alert("تم حفظ إعدادات الذكاء الاصطناعي."); };
   const runConnectionTest = async () => { setTestingConnection(true); const result = await testSupabaseConnection(); alert(result.message); setTestingConnection(false); };
+  
   const analyzeBehaviorLog = async () => { setIsGenerating(true); try { const prompt = `حلل سجل المخالفات التالي: عدد المخالفات: ${behaviorRecords.length} أهم المخالفات: ${behaviorRecords.slice(0, 5).map(b => b.violationName).join(', ')} ما هي المشكلة السلوكية الأبرز؟ وما التوصية المناسبة؟`; const res = await generateSmartContent(prompt); setBehaviorAnalysis(res); } catch (e) { alert("فشل التحليل"); } finally { setIsGenerating(false); } };
+  
+  const generateFullReport = async () => {
+      setIsGenerating(true);
+      try {
+          // Prepare summarized stats
+          let totalPresence = 0;
+          let totalAbsence = 0;
+          let totalLate = 0;
+          attendanceRecords.forEach(r => {
+             r.records.forEach(s => {
+                 if(s.status === 'PRESENT') totalPresence++;
+                 else if(s.status === 'ABSENT') totalAbsence++;
+                 else if(s.status === 'LATE') totalLate++;
+             });
+          });
+          const total = totalPresence + totalAbsence + totalLate;
+          
+          const stats = {
+              attendanceRate: total > 0 ? Math.round((totalPresence / total) * 100) : 0,
+              absenceRate: total > 0 ? Math.round((totalAbsence / total) * 100) : 0,
+              latenessRate: total > 0 ? Math.round((totalLate / total) * 100) : 0,
+              totalViolations: behaviorRecords.length,
+              riskCount: alerts.length,
+              mostAbsentGrade: 'يتم حسابه' // Simplified
+          };
+          
+          const report = await generateExecutiveReport(stats);
+          setExecutiveReport(report);
+      } catch (e) { alert("فشل إنشاء التقرير"); }
+      finally { setIsGenerating(false); }
+  };
+
   const executeDelete = async () => { if (!deleteTarget) return; setIsDeleting(true); try { if (deleteTarget === 'requests') { await clearRequests(); alert("تم حذف جميع طلبات الأعذار."); } else if (deleteTarget === 'attendance') { await clearAttendance(); alert("تم حذف سجلات الحضور والغياب."); } else if (deleteTarget === 'students') { await clearStudents(); alert("تم حذف جميع بيانات الطلاب."); } else if (deleteTarget === 'all') { await Promise.all([clearStudents(), clearRequests(), clearAttendance(), clearBehaviorRecords(), clearAdminInsights(), clearReferrals()]); alert("تمت تهيئة النظام للعام الجديد بنجاح. تم حذف جميع البيانات."); } window.location.reload(); } catch (e: any) { alert("حدث خطأ أثناء الحذف: " + e.message); } finally { setIsDeleting(false); setDeleteTarget(null); } };
 
   const handleAddNews = async () => {
@@ -129,7 +164,45 @@ const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in pb-20 relative">
+    <>
+    <style>
+    {`
+        @media print {
+            body * { visibility: hidden; }
+            #executive-report-print, #executive-report-print * { visibility: visible; }
+            #executive-report-print { position: absolute; left: 0; top: 0; width: 100%; padding: 40px; background: white; z-index: 9999; }
+            .no-print { display: none !important; }
+        }
+    `}
+    </style>
+
+    {/* PRINTABLE EXECUTIVE REPORT */}
+    {executiveReport && (
+        <div id="executive-report-print" className="hidden" dir="rtl">
+            <div className="flex justify-between items-center mb-8 border-b-2 border-black pb-4">
+                <div className="text-right font-bold text-sm">
+                    <p>المملكة العربية السعودية</p>
+                    <p>وزارة التعليم</p>
+                    <p>{schoolName}</p>
+                </div>
+                <img src={schoolLogo} alt="Logo" className="h-24 w-auto object-contain"/>
+                <div className="text-left font-bold text-sm">
+                    <p>Executive Report</p>
+                    <p>{new Date().toLocaleDateString('en-US')}</p>
+                </div>
+            </div>
+            <h1 className="text-3xl font-bold text-center mb-8 underline">التقرير التنفيذي الشامل (AI)</h1>
+            <div className="text-lg leading-loose whitespace-pre-line text-justify">
+                {executiveReport}
+            </div>
+            <div className="mt-16 flex justify-between px-10">
+                <div className="text-center"><p className="font-bold">مدير المدرسة</p><p className="mt-10">.............................</p></div>
+                <div className="text-center"><p className="font-bold">الختم</p></div>
+            </div>
+        </div>
+    )}
+
+    <div className="space-y-6 animate-fade-in pb-20 relative no-print">
       
       {activeView === 'menu' && (
           <div className="space-y-8">
@@ -140,9 +213,18 @@ const Dashboard: React.FC = () => {
                         <h1 className="text-3xl font-bold text-slate-800 mb-2">
                         مركز القيادة <span className="text-blue-900">المدرسية</span>
                         </h1>
-                        <p className="text-slate-500">
+                        <p className="text-slate-500 mb-4">
                         {schoolName} - لوحة التحكم المركزية
                         </p>
+                        
+                        {/* NEW: Executive Report Button */}
+                        <button 
+                            onClick={generateFullReport} 
+                            disabled={isGenerating}
+                            className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all flex items-center gap-2"
+                        >
+                            {isGenerating ? <Loader2 className="animate-spin" size={20}/> : <ClipboardCheck size={20}/>} إنشاء التقرير التنفيذي (AI)
+                        </button>
                     </div>
                     <div className="text-left hidden md:block">
                         <p className="text-xs font-bold text-slate-400 uppercase mb-1">اليوم</p>
@@ -150,6 +232,20 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
               </div>
+              
+              {/* Executive Report Modal */}
+              {executiveReport && (
+                  <div className="bg-white p-6 rounded-3xl border-2 border-indigo-100 shadow-lg relative animate-fade-in-up">
+                      <button onClick={() => setExecutiveReport(null)} className="absolute top-4 left-4 text-slate-400 hover:text-red-500"><X size={20}/></button>
+                      <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-4">
+                          <h2 className="text-xl font-bold text-indigo-900 flex items-center gap-2"><Sparkles className="text-amber-500"/> التقرير الاستراتيجي المقترح</h2>
+                          <button onClick={() => window.print()} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-900"><Printer size={16}/> طباعة رسمي</button>
+                      </div>
+                      <div className="prose prose-indigo max-w-none text-slate-700 whitespace-pre-line leading-relaxed text-sm md:text-base">
+                          {executiveReport}
+                      </div>
+                  </div>
+              )}
 
               <div className="bg-gradient-to-r from-amber-100 to-orange-100 p-6 rounded-3xl border border-amber-200 shadow-sm">
                   <h2 className="text-xl font-bold text-amber-800 mb-4 flex items-center gap-2"><Star className="fill-amber-600 text-amber-600"/> لوحة الشرف (الأكثر تميزاً)</h2>
@@ -165,7 +261,8 @@ const Dashboard: React.FC = () => {
                       ))}
                   </div>
               </div>
-
+              
+              {/* Stats Ticker */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
                       <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><FileText size={20}/></div>
@@ -185,6 +282,7 @@ const Dashboard: React.FC = () => {
                   </div>
               </div>
 
+              {/* Grid Menu */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {gridItems.map(item => (
                       <button
@@ -222,6 +320,8 @@ const Dashboard: React.FC = () => {
           </div>
       )}
 
+      {/* ... Other Views (Requests, Behavior, etc.) kept mostly same but improved visually if needed ... */}
+      
       {activeView !== 'menu' && (
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center justify-between mb-4">
                <div className="flex items-center gap-3">
@@ -238,6 +338,7 @@ const Dashboard: React.FC = () => {
            </div>
       )}
 
+      {/* Existing Views Integration... */}
       {activeView === 'overview' && (
           <div className="space-y-6 animate-fade-in">
               {alerts.length > 0 ? (
@@ -249,7 +350,6 @@ const Dashboard: React.FC = () => {
                           </h2>
                           <span className="bg-red-200 text-red-800 px-3 py-1 rounded-full text-xs font-bold">{alerts.length} طلاب</span>
                       </div>
-                      
                       {showDetails && (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
                             {alerts.map((alert, idx) => (
@@ -301,7 +401,6 @@ const Dashboard: React.FC = () => {
           <div className="animate-fade-in"><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"><h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Megaphone className="text-amber-500"/> إرسال توجيه إداري</h3><textarea value={directiveContent} onChange={e => setDirectiveContent(e.target.value)} className="w-full p-4 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-900 mb-4 h-32" placeholder="اكتب التوجيه هنا..."></textarea><div className="flex gap-3"><select value={directiveTarget} onChange={e => setDirectiveTarget(e.target.value as any)} className="bg-slate-50 border border-slate-200 rounded-lg px-3 text-sm font-bold"><option value="deputy">للوكيل</option><option value="counselor">للمرشد</option></select><button onClick={handleSendDirective} disabled={sendingDirective} className="bg-blue-900 text-white px-6 py-2 rounded-lg font-bold text-sm flex items-center gap-2 hover:bg-blue-800">{sendingDirective ? <Loader2 className="animate-spin" size={16}/> : <Send size={16}/>} إرسال</button></div></div></div>
       )}
 
-      {/* VIEW 4: NEWS */}
       {activeView === 'news' && (
           <div className="animate-fade-in space-y-6">
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
@@ -388,6 +487,7 @@ const Dashboard: React.FC = () => {
           </div>
       )}
     </div>
+    </>
   );
 };
 

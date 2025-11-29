@@ -1,9 +1,7 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageCircle, X, Send, Loader2, Sparkles, Bot } from 'lucide-react';
+import { MessageCircle, X, Send, Loader2, Sparkles, Bot, User } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
-import { getAIConfig, getSchoolNews, getBotContext } from '../services/storage';
-import { BEHAVIOR_VIOLATIONS } from '../constants';
+import { getAIConfig, generateUserSpecificBotContext } from '../services/storage';
 
 interface Message {
   id: string;
@@ -19,11 +17,13 @@ const ChatBot: React.FC = () => {
     {
       id: '1',
       role: 'model',
-      text: 'مرحباً بك! أنا المساعد الذكي لمتوسطة عماد الدين زنكي. كيف يمكنني مساعدتك اليوم؟',
+      text: 'مرحباً! أنا المساعد الذكي لمدرسة عماد الدين زنكي. كيف أساعدك اليوم؟',
       timestamp: new Date()
     }
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<string>('زائر');
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -33,6 +33,15 @@ const ChatBot: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isOpen]);
+
+  // Initial Context Load when opened
+  useEffect(() => {
+      if (isOpen) {
+          generateUserSpecificBotContext().then(data => {
+              setCurrentUserRole(data.role);
+          });
+      }
+  }, [isOpen]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -54,43 +63,30 @@ const ChatBot: React.FC = () => {
         throw new Error("API Key missing");
       }
 
-      // 1. Gather Context
-      const [news, botContext] = await Promise.all([
-          getSchoolNews(),
-          getBotContext()
-      ]);
-      
-      const latestNews = news.slice(0, 3).map(n => `- ${n.title}: ${n.content}`).join('\n');
-      const schoolName = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
+      // 1. Fetch Dynamic Context (Real-time)
+      const { context, role } = await generateUserSpecificBotContext();
+      setCurrentUserRole(role);
 
       // 2. Prepare System Instruction
       const systemInstruction = `
-        أنت مساعد ذكي ومحترم لمدرسة "${schoolName}".
-        جمهورك هم: أولياء الأمور، المعلمون، والطلاب.
+        أنت مساعد ذكي خاص بمدرسة "متوسطة عماد الدين زنكي".
         
-        معلومات أساسية عن المدرسة (قاعدة المعرفة):
-        ${botContext || "لا توجد معلومات إضافية محددة، أجب بناءً على المعلومات العامة للمدارس السعودية."}
-        
-        آخر أخبار المدرسة:
-        ${latestNews || "لا توجد أخبار حديثة."}
-        
-        لائحة السلوك (أمثلة):
-        مخالفات الدرجة الأولى: ${BEHAVIOR_VIOLATIONS[0].violations.join(', ')}.
-        مخالفات الدرجة الرابعة: ${BEHAVIOR_VIOLATIONS[3].violations.join(', ')}.
+        بيانات المستخدم الحالي:
+        - الدور: ${role}
+        - السياق والبيانات الخاصة به:
+        ${context}
 
-        تعليماتك:
-        1. أجب باختصار ولطف.
-        2. استخدم اللغة العربية الفصحى المبسطة.
-        3. إذا سألك أحد عن "كيف أقدم عذر"، وجهه لصفحة "تقديم عذر" في الموقع.
-        4. إذا سألك ولي أمر عن ابنه، ذكره بضرورة تسجيل الدخول أولاً في "بوابة ولي الأمر".
-        5. اعتمد في إجابتك أولاً على "معلومات أساسية عن المدرسة" المذكورة أعلاه.
+        تعليمات:
+        1. أجب بناءً على "السياق والبيانات الخاصة" المذكورة أعلاه.
+        2. كن لطيفاً ومختصراً.
+        3. استخدم اللغة العربية الفصحى.
+        4. إذا سألك المستخدم عن بيانات غير موجودة في السياق، اعتذر بلطف وأخبره أنك لا تملك هذه المعلومة حالياً.
       `;
 
       // 3. Call Gemini
       const ai = new GoogleGenAI({ apiKey: config.apiKey });
       const model = 'gemini-2.5-flash';
       
-      // Construct history for context
       const history = messages.map(m => ({
         role: m.role,
         parts: [{ text: m.text }]
@@ -139,26 +135,31 @@ const ChatBot: React.FC = () => {
       {/* Floating Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`fixed bottom-6 right-6 z-50 p-4 rounded-full shadow-2xl transition-all duration-300 flex items-center justify-center ${isOpen ? 'bg-red-500 rotate-90' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:scale-110'}`}
+        className={`fixed bottom-6 right-6 z-[100] p-4 rounded-full shadow-2xl transition-all duration-300 flex items-center justify-center ${isOpen ? 'bg-red-500 rotate-90' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:scale-110'}`}
       >
         {isOpen ? <X className="text-white" size={28} /> : <MessageCircle className="text-white" size={28} />}
       </button>
 
       {/* Chat Window */}
       <div 
-        className={`fixed bottom-24 right-6 z-50 w-[350px] md:w-[400px] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden transition-all duration-300 origin-bottom-right flex flex-col ${isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-0 opacity-0 translate-y-10 pointer-events-none'}`}
+        className={`fixed bottom-24 right-6 z-[100] w-[350px] md:w-[400px] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden transition-all duration-300 origin-bottom-right flex flex-col ${isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-0 opacity-0 translate-y-10 pointer-events-none'}`}
         style={{ height: '500px', maxHeight: '80vh' }}
       >
         {/* Header */}
-        <div className="bg-slate-900 p-4 flex items-center gap-3 text-white">
-          <div className="bg-white/10 p-2 rounded-full">
-            <Bot size={24} className="text-blue-300" />
+        <div className="bg-slate-900 p-4 flex items-center justify-between text-white">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/10 p-2 rounded-full">
+                <Bot size={24} className="text-blue-300" />
+            </div>
+            <div>
+                <h3 className="font-bold text-sm">المساعد المدرسي</h3>
+                <p className="text-[10px] text-slate-300 flex items-center gap-1">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> متصل
+                </p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-bold text-sm">المساعد المدرسي</h3>
-            <p className="text-[10px] text-slate-300 flex items-center gap-1">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> متصل الآن (AI)
-            </p>
+          <div className="text-[10px] bg-white/20 px-2 py-1 rounded flex items-center gap-1">
+              <User size={10} /> {currentUserRole}
           </div>
         </div>
 
@@ -167,7 +168,7 @@ const ChatBot: React.FC = () => {
           {messages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div 
-                className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed ${
+                className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
                   msg.role === 'user' 
                     ? 'bg-blue-600 text-white rounded-br-none' 
                     : 'bg-white text-slate-700 border border-slate-200 rounded-bl-none shadow-sm'
@@ -195,7 +196,7 @@ const ChatBot: React.FC = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyPress}
-              placeholder="اكتب سؤالك هنا..."
+              placeholder="اكتب استفسارك..."
               className="flex-1 bg-transparent outline-none text-sm px-2 text-slate-700"
               disabled={isLoading}
             />
@@ -207,8 +208,8 @@ const ChatBot: React.FC = () => {
               {isLoading ? <Loader2 size={18} className="animate-spin"/> : <Send size={18} />}
             </button>
           </div>
-          <p className="text-[10px] text-center text-slate-400 mt-2">
-            يعمل بواسطة الذكاء الاصطناعي، قد يخطئ أحياناً.
+          <p className="text-[9px] text-center text-slate-400 mt-2">
+            يعمل بالذكاء الاصطناعي ويجيب بناءً على صلاحياتك.
           </p>
         </div>
       </div>

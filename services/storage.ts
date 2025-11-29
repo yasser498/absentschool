@@ -84,7 +84,7 @@ const getCounselorName = async () => {
     return "الموجه الطلابي";
 };
 
-// 1. For Admin: Executive School Report
+// 1. For Admin: Executive Report
 export const generateExecutiveReport = async (stats: any) => {
     const prompt = `
     بصفتك مستشاراً تربويًا وإداريًا خبيراً، قم بإعداد "تقرير تنفيذي شامل" لإدارة المدرسة بناءً على البيانات التالية:
@@ -105,7 +105,7 @@ export const generateExecutiveReport = async (stats: any) => {
     return await generateSmartContent(prompt);
 };
 
-// 2. For Parent: Smart Student Report (Updated with Dynamic Signature)
+// 2. For Parent: Smart Student Report
 export const generateSmartStudentReport = async (studentName: string, attendance: any[], behavior: any[], points: number) => {
     const absentDays = attendance.filter(a => a.status === 'ABSENT').length;
     const lateDays = attendance.filter(a => a.status === 'LATE').length;
@@ -158,6 +158,127 @@ export const generateGuidancePlan = async (studentName: string, history: any) =>
     3. خطوتان عمليتان لتعديل السلوك.
     `;
     return await generateSmartContent(prompt);
+};
+
+// --- NEW: USER SPECIFIC CONTEXT FOR CHATBOT ---
+export const generateUserSpecificBotContext = async (): Promise<{role: string, context: string}> => {
+    // 1. General School Context
+    const news = await getSchoolNews();
+    const generalInfo = await getBotContext();
+    const newsText = news.slice(0, 3).map(n => `- خبر: ${n.title} (${n.content})`).join('\n');
+    
+    let baseContext = `
+    معلومات عامة عن المدرسة:
+    ${generalInfo || "الدوام: 7:00 ص - 1:15 م."}
+    
+    آخر الأخبار:
+    ${newsText}
+    `;
+
+    // 2. Check Login Session
+    const adminSession = localStorage.getItem('ozr_admin_session');
+    const staffSession = localStorage.getItem('ozr_staff_session');
+    const parentId = localStorage.getItem('ozr_parent_id');
+
+    if (adminSession) {
+        // Admin Context
+        const requests = await getRequests();
+        const pendingCount = requests.filter(r => r.status === 'PENDING').length;
+        const risks = await getConsecutiveAbsences();
+        
+        return {
+            role: 'مدير النظام (Admin)',
+            context: `
+            ${baseContext}
+            
+            أنت مساعد شخصي لمدير المدرسة.
+            حالة النظام الحالية:
+            - يوجد ${pendingCount} طلب عذر معلق يحتاج للمراجعة.
+            - يوجد ${risks.length} طلاب في دائرة الخطر (غياب متصل لأكثر من 3 أيام).
+            - جميع الصلاحيات متاحة لك في لوحة التحكم.
+            
+            الطلاب في دائرة الخطر:
+            ${risks.map(r => `${r.studentName} (${r.days} أيام)`).join(', ')}
+            `
+        };
+    }
+
+    if (staffSession) {
+        // Staff Context (Teacher, Deputy, Counselor)
+        const user: StaffUser = JSON.parse(staffSession);
+        const perms = user.permissions || [];
+        
+        let roleName = 'معلم';
+        let specificData = '';
+
+        if (perms.includes('deputy')) {
+            roleName = 'وكيل شؤون الطلاب';
+            const behaviors = await getBehaviorRecords();
+            const todayViolations = behaviors.filter(b => b.date === new Date().toISOString().split('T')[0]).length;
+            const risks = await getConsecutiveAbsences();
+            specificData = `
+            - مخالفات اليوم المسجلة: ${todayViolations}.
+            - طلاب في خطر الغياب المتصل: ${risks.length}.
+            - يمكنك تسجيل مخالفات واستدعاء أولياء الأمور.`;
+        } else if (perms.includes('students')) {
+            roleName = 'الموجه الطلابي';
+            const referrals = await getReferrals();
+            const pendingRefs = referrals.filter(r => r.status === 'pending').length;
+            specificData = `- لديك ${pendingRefs} إحالة جديدة من المعلمين/الوكيل تحتاج لمعالجة.\n- يمكنك تسجيل جلسات إرشادية.`;
+        } else {
+            // Regular Teacher
+            const assignments = user.assignments || [];
+            const classesText = assignments.map(a => `${a.grade} ${a.className}`).join(', ');
+            specificData = `- الفصول المسندة إليك: ${classesText}.\n- يمكنك رصد الغياب ورفع الملاحظات السلوكية لطلاب هذه الفصول.`;
+        }
+
+        return {
+            role: roleName,
+            context: `
+            ${baseContext}
+            
+            أنت مساعد شخصي لـ ${roleName} واسمه ${user.name}.
+            بيانات خاصة بمهامه:
+            ${specificData}
+            `
+        };
+    }
+
+    if (parentId) {
+        // Parent Context
+        const children = await getParentChildren(parentId);
+        let childrenDetails = "";
+        
+        for (const child of children) {
+            const history = await getStudentAttendanceHistory(child.studentId, child.grade, child.className);
+            const absentDays = history.filter(h => h.status === 'ABSENT').length;
+            const points = (await getStudentPoints(child.studentId)).total;
+            childrenDetails += `- الابن: ${child.name} (الصف: ${child.grade}). غياب: ${absentDays} يوم. نقاط تميز: ${points}.\n`;
+        }
+
+        return {
+            role: 'ولي أمر',
+            context: `
+            ${baseContext}
+            
+            أنت مساعد لولي أمر.
+            بيانات أبنائه:
+            ${childrenDetails || "لا يوجد أبناء مرتبطين حالياً. ساعده في طريقة ربط الأبناء عبر رقم الهوية."}
+            
+            إذا سأل عن ابنه، أجب بناءً على البيانات أعلاه.
+            `
+        };
+    }
+
+    // Public Context
+    return {
+        role: 'زائر',
+        context: `
+        ${baseContext}
+        أنت مساعد لزوار الموقع العام.
+        ساعدهم في معرفة طريقة التسجيل، تقديم الأعذار، أو معلومات عن المدرسة.
+        `
+    };
 };
 
 export const analyzeSentiment = async (text: string): Promise<'positive' | 'negative' | 'neutral'> => {
@@ -245,7 +366,26 @@ export const bookAppointment = async (appt: Omit<Appointment, 'id' | 'status' | 
 
     await supabase.from('appointment_slots').update({ current_bookings: slot.current_bookings + 1 }).eq('id', appt.slotId);
 
-    return newAppt;
+    // Return object consistent with Appointment interface, joining the Slot data manually
+    return {
+        id: newAppt.id,
+        slotId: newAppt.slot_id,
+        studentId: newAppt.student_id,
+        studentName: newAppt.student_name,
+        parentName: newAppt.parent_name,
+        parentCivilId: newAppt.parent_civil_id,
+        visitReason: newAppt.visit_reason,
+        status: newAppt.status,
+        createdAt: newAppt.created_at,
+        slot: {
+            id: slot.id,
+            date: slot.date,
+            startTime: slot.start_time,
+            endTime: slot.end_time,
+            maxCapacity: slot.max_capacity,
+            currentBookings: slot.current_bookings + 1
+        }
+    };
 };
 
 export const getMyAppointments = async (parentCivilId: string) => {
@@ -508,37 +648,80 @@ export const getDailyAttendanceReport = async (date: string) => {
     return { totalPresent, totalAbsent, totalLate, details };
 };
 export const clearAttendance = async () => { await supabase.from('attendance').delete().neq('id', '0'); };
+
 export const getConsecutiveAbsences = async () => {
-    // This requires complex logic, fetching all attendance and processing in memory for now
     const { data: records } = await supabase.from('attendance').select('*').order('date', { ascending: false });
     if (!records) return [];
     
-    const studentAbsenceMap: Record<string, { count: number, name: string, lastDate: string }> = {};
-    const alerts: any[] = [];
-
-    // Simple consecutive check logic (assuming records are sorted desc)
-    // This is an approximation. A robust solution needs to check dates continuity.
-    // Here we just count recent absences.
+    // Group by student
+    const studentHistory: Record<string, {name: string, statuses: string[], dates: string[]}> = {};
     
-    return alerts; // TODO: Implement robust consecutive logic if needed
+    records.forEach((classRecord: any) => {
+        classRecord.records.forEach((stu: any) => {
+            if (!studentHistory[stu.studentId]) {
+                studentHistory[stu.studentId] = { name: stu.studentName, statuses: [], dates: [] };
+            }
+            studentHistory[stu.studentId].statuses.push(stu.status);
+            studentHistory[stu.studentId].dates.push(classRecord.date);
+        });
+    });
+
+    // Fetch Risk Actions (Resolved Alerts) within last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const { data: actions } = await supabase
+        .from('risk_actions')
+        .select('student_id')
+        .gte('resolved_at', sevenDaysAgo.toISOString());
+    
+    const resolvedStudentIds = new Set(actions?.map((a: any) => a.student_id) || []);
+
+    const alerts: any[] = [];
+    Object.entries(studentHistory).forEach(([id, data]) => {
+        let consecutive = 0;
+        for (const status of data.statuses) {
+            if (status === 'ABSENT') consecutive++;
+            else break; // Break on present/late
+        }
+        
+        // Filter out resolved students
+        if (consecutive >= 3 && !resolvedStudentIds.has(id)) {
+            alerts.push({
+                studentId: id,
+                studentName: data.name,
+                days: consecutive,
+                lastDate: data.dates[0]
+            });
+        }
+    });
+    
+    return alerts;
 };
-export const resolveAbsenceAlert = async (studentId: string, action: string) => { /* Log resolution */ };
+
+export const resolveAbsenceAlert = async (studentId: string, action: string) => { 
+    await supabase.from('risk_actions').insert({
+        student_id: studentId,
+        action_type: action,
+        resolved_at: new Date().toISOString()
+    });
+};
+
 export const getBehaviorRecords = async (studentId?: string) => {
-    let query = supabase.from('behavior').select('*');
+    let query = supabase.from('behaviors').select('*'); // Fixed table name
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) return [];
     return data.map(mapBehaviorFromDB);
 };
 export const addBehaviorRecord = async (record: BehaviorRecord) => { 
-    const { error } = await supabase.from('behavior').insert(mapBehaviorToDB(record)); 
+    const { error } = await supabase.from('behaviors').insert(mapBehaviorToDB(record)); // Fixed table name
     if (error) throw new Error(error.message); 
     await createNotification(record.studentId, 'alert', 'مخالفة سلوكية', `تم تسجيل مخالفة: ${record.violationName}`);
 };
-export const updateBehaviorRecord = async (record: BehaviorRecord) => { const { error } = await supabase.from('behavior').update(mapBehaviorToDB(record)).eq('id', record.id); if (error) throw new Error(error.message); };
-export const deleteBehaviorRecord = async (id: string) => { const { error } = await supabase.from('behavior').delete().eq('id', id); if (error) throw new Error(error.message); };
-export const acknowledgeBehavior = async (id: string, feedback: string) => { await supabase.from('behavior').update({ parent_viewed: true, parent_feedback: feedback, parent_viewed_at: new Date().toISOString() }).eq('id', id); };
-export const clearBehaviorRecords = async () => { await supabase.from('behavior').delete().neq('id', '0'); };
+export const updateBehaviorRecord = async (record: BehaviorRecord) => { const { error } = await supabase.from('behaviors').update(mapBehaviorToDB(record)).eq('id', record.id); if (error) throw new Error(error.message); };
+export const deleteBehaviorRecord = async (id: string) => { const { error } = await supabase.from('behaviors').delete().eq('id', id); if (error) throw new Error(error.message); };
+export const acknowledgeBehavior = async (id: string, feedback: string) => { await supabase.from('behaviors').update({ parent_viewed: true, parent_feedback: feedback, parent_viewed_at: new Date().toISOString() }).eq('id', id); };
+export const clearBehaviorRecords = async () => { await supabase.from('behaviors').delete().neq('id', '0'); };
 export const getStudentObservations = async (studentId?: string) => {
     let query = supabase.from('observations').select('*');
     if (studentId) query = query.eq('student_id', studentId);

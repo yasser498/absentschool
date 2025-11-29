@@ -278,6 +278,52 @@ const Inquiry: React.FC = () => {
                                     ))}
                                 </div>
                             )}
+                            
+                            {activeTab === 'observations' && (
+                                <div className="space-y-4 animate-fade-in">
+                                    {observations.length === 0 ? <p className="text-center py-10 text-slate-400">لا توجد ملاحظات.</p> : observations.map(obs => (
+                                        <div key={obs.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
+                                            <div className={`absolute top-0 right-0 w-1 h-full ${obs.sentiment === 'positive' ? 'bg-emerald-500' : obs.sentiment === 'negative' ? 'bg-red-500' : 'bg-slate-300'}`}></div>
+                                            <p className="text-sm font-bold text-slate-800 mb-2">{obs.staffName}</p>
+                                            <p className="text-sm text-slate-600 mb-4">{obs.content}</p>
+                                            
+                                            {!obs.parentViewed ? (
+                                                <div className="mt-3 pt-3 border-t border-slate-100">
+                                                    {replyMode?.id === obs.id && replyMode.type === 'observation' ? (
+                                                        <div className="animate-fade-in">
+                                                            <textarea 
+                                                                className="w-full p-3 border rounded-xl text-sm mb-2 outline-none focus:ring-2 focus:ring-blue-100" 
+                                                                placeholder="اكتب ردك أو ملاحظتك هنا..."
+                                                                value={replyContent}
+                                                                onChange={e => setReplyContent(e.target.value)}
+                                                                autoFocus
+                                                            ></textarea>
+                                                            <div className="flex gap-2 justify-end">
+                                                                <button onClick={() => { setReplyMode(null); setReplyContent(''); }} className="bg-slate-100 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">إلغاء</button>
+                                                                <button onClick={handleSubmitReply} disabled={submittingReply} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1">
+                                                                    {submittingReply ? <Loader2 className="animate-spin" size={14}/> : <Send size={14}/>} إرسال
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <button onClick={() => { setReplyMode({id: obs.id, type: 'observation'}); setReplyContent(''); }} className="w-full bg-blue-50 text-blue-700 py-2 rounded-lg text-sm font-bold border border-blue-100 hover:bg-blue-100 transition-colors">
+                                                            تأكيد الاطلاع والرد
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="mt-3 bg-slate-50 p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2 border border-slate-100">
+                                                    <CheckCircle size={16} className="text-emerald-500"/>
+                                                    <div>
+                                                        <span className="font-bold text-emerald-700 block">تم الاطلاع</span>
+                                                        {obs.parentFeedback && <span className="text-slate-600 mt-1 block">رد ولي الأمر: {obs.parentFeedback}</span>}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

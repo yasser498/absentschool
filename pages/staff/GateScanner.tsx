@@ -21,6 +21,10 @@ const GateScanner: React.FC = () => {
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  // School Identity
+  const SCHOOL_NAME = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
+  const SCHOOL_LOGO = "https://www.raed.net/img?id=1471924"; // Unified Logo
+
   const scannerRef = useRef<any>(null);
 
   // Stats
@@ -183,69 +187,90 @@ const GateScanner: React.FC = () => {
 
   return (
     <>
-    <style>
-        {`
-          @media print {
-            body * { visibility: hidden; }
-            #gate-report, #gate-report * { visibility: visible; }
-            #gate-report { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; background: white; z-index: 9999; }
-            .no-print { display: none !important; }
-          }
-        `}
-    </style>
-
-    {/* PRINT REPORT */}
+    {/* UNIFIED PRINT REPORT TEMPLATE */}
     <div id="gate-report" className="hidden" dir="rtl">
-        <div className="flex justify-between items-start border-b-2 border-black pb-6 mb-6">
-            <div className="text-right font-bold text-sm space-y-1">
+        {/* Unified Header */}
+        <div className="print-header">
+            <div className="print-header-right">
                 <p>المملكة العربية السعودية</p>
                 <p>وزارة التعليم</p>
-                <p>الأمن والسلامة</p>
+                <p>{SCHOOL_NAME}</p>
             </div>
-            <div className="text-center">
-                <h1 className="text-2xl font-bold mb-2">سجل الزوار اليومي</h1>
-                <p className="text-lg font-mono">{new Date().toLocaleDateString('ar-SA')}</p>
+            <div className="print-header-center">
+                <img src={SCHOOL_LOGO} alt="School Logo" className="print-logo mx-auto" />
             </div>
-            <div className="text-left">
-                {/* Placeholder for Logo */}
+            <div className="print-header-left">
+                <p>Ministry of Education</p>
+                <p>Security & Safety</p>
+                <p>{new Date().toLocaleDateString('en-GB')}</p>
             </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mb-6 text-center print:grid print:grid-cols-3">
-             <div className="border border-black p-2 font-bold">إجمالي المواعيد: {stats.total}</div>
-             <div className="border border-black p-2 font-bold">تم الوصول: {stats.arrived}</div>
-             <div className="border border-black p-2 font-bold">لم يصل: {stats.pending}</div>
+        {/* Report Title */}
+        <div className="text-center mb-6">
+            <h1 className="text-xl font-bold border-b-2 border-black inline-block pb-1">سجل الزوار اليومي (بوابة الأمن)</h1>
+            <p className="text-sm mt-2">التاريخ: {new Date().toLocaleDateString('ar-SA', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}</p>
         </div>
-        <table className="w-full text-right border-collapse border border-black text-sm">
+
+        {/* Stats Summary Table */}
+        <table className="mb-6 w-full text-center">
+             <thead>
+                 <tr>
+                     <th>إجمالي المواعيد</th>
+                     <th>تم الدخول</th>
+                     <th>لم يصل / غائب</th>
+                 </tr>
+             </thead>
+             <tbody>
+                 <tr>
+                     <td className="font-bold">{stats.total}</td>
+                     <td className="font-bold">{stats.arrived}</td>
+                     <td className="font-bold">{stats.pending}</td>
+                 </tr>
+             </tbody>
+        </table>
+
+        {/* Main Data Table */}
+        <table className="w-full text-right text-sm">
             <thead>
-                <tr className="bg-gray-100 print:bg-gray-200">
-                    <th className="border border-black p-2">الزائر</th>
-                    <th className="border border-black p-2">الطالب</th>
-                    <th className="border border-black p-2">الموعد</th>
-                    <th className="border border-black p-2">وقت الوصول</th>
-                    <th className="border border-black p-2">السبب</th>
+                <tr>
+                    <th style={{ width: '5%' }}>م</th>
+                    <th style={{ width: '20%' }}>اسم الزائر</th>
+                    <th style={{ width: '20%' }}>اسم الطالب</th>
+                    <th style={{ width: '15%' }}>وقت الموعد</th>
+                    <th style={{ width: '15%' }}>وقت الوصول</th>
+                    <th style={{ width: '25%' }}>سبب الزيارة</th>
                 </tr>
             </thead>
             <tbody>
-                {todaysVisits.map((v, idx) => (
-                    <tr key={idx}>
-                        <td className="border border-black p-2">{v.parentName}</td>
-                        <td className="border border-black p-2">{v.studentName}</td>
-                        <td className="border border-black p-2">{v.slot?.startTime}</td>
-                        <td className="border border-black p-2">{v.arrivedAt ? new Date(v.arrivedAt).toLocaleTimeString('ar-SA') : '-'}</td>
-                        <td className="border border-black p-2">{v.visitReason}</td>
+                {todaysVisits.length > 0 ? (
+                    todaysVisits.map((v, idx) => (
+                        <tr key={idx}>
+                            <td>{idx + 1}</td>
+                            <td className="font-bold">{v.parentName}</td>
+                            <td>{v.studentName}</td>
+                            <td>{v.slot?.startTime}</td>
+                            <td>{v.arrivedAt ? new Date(v.arrivedAt).toLocaleTimeString('ar-SA') : '-'}</td>
+                            <td>{v.visitReason}</td>
+                        </tr>
+                    ))
+                ) : (
+                    <tr>
+                        <td colSpan={6} className="text-center p-4">لا توجد زيارات مسجلة لهذا اليوم</td>
                     </tr>
-                ))}
+                )}
             </tbody>
         </table>
-        <div className="mt-12 flex justify-between px-10">
+
+        {/* Footer Signatures */}
+        <div className="mt-16 flex justify-between px-10">
             <div className="text-center">
-                <p className="font-bold mb-8">مسؤول الأمن</p>
-                <p>.....................</p>
+                <p className="font-bold mb-8">مسؤول الأمن والسلامة</p>
+                <p>.............................</p>
             </div>
             <div className="text-center">
                 <p className="font-bold mb-8">مدير المدرسة</p>
-                <p>.....................</p>
+                <p>.............................</p>
             </div>
         </div>
     </div>

@@ -36,102 +36,101 @@ select option {
 .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
 
 /* ========================================= */
-/* PRINT STYLES - OFFICIAL & ROBUST SOLUTION */
+/* PRINT STYLES - OFFICIAL UNIFIED TEMPLATE  */
 /* ========================================= */
 
 @media print {
-  /* 1. Reset Page Settings */
   @page {
     size: A4;
-    margin: 10mm; /* Standard margin */
+    margin: 5mm;
   }
 
-  /* 2. Hide Everything by Default */
-  body, #root, main, nav, aside, header, footer, button, .no-print, .fixed {
-    visibility: hidden !important;
-    display: none !important;
-    height: 0 !important;
-    width: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    background: white !important;
+  /* Hide everything by default */
+  body * {
+    visibility: hidden;
   }
 
-  /* 3. Force Background Colors & Graphics */
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    color-adjust: exact !important;
+  /* Define the print container IDs that should be visible */
+  #gate-report, #gate-report *,
+  #print-area, #print-area *,
+  #staff-report-print, #staff-report-print *,
+  #print-container, #print-container *,
+  #session-report-print, #session-report-print * {
+    visibility: visible;
   }
 
-  /* 4. Show Only Targeted Print Containers */
-  /* Add IDs of all your printable sections here */
-  #print-container,
-  #executive-report-print,
+  /* Positioning the print container */
   #gate-report,
-  #session-report-print,
+  #print-area,
   #staff-report-print,
-  #print-area {
-    visibility: visible !important;
-    display: block !important;
-    position: fixed !important; /* Fixed ensures it starts at top-left of paper */
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
+  #print-container,
+  #session-report-print {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 20px;
     background: white !important;
-    z-index: 99999 !important;
-    overflow: visible !important;
-  }
-
-  /* 5. Ensure content inside print containers is visible */
-  #print-container *,
-  #executive-report-print *,
-  #gate-report *,
-  #session-report-print *,
-  #staff-report-print *,
-  #print-area * {
-    visibility: visible !important;
-    display: block !important; /* Or inline/flex as needed, but block is safest for resets */
-  }
-  
-  /* Re-apply flex/grid for print layouts if needed */
-  .print-grid { display: grid !important; }
-  .print-flex { display: flex !important; }
-  .print-table { display: table !important; }
-  .print-row { display: table-row !important; }
-  .print-cell { display: table-cell !important; }
-
-  /* 6. Font Sizing for Print */
-  body {
-    font-size: 12pt !important;
-    line-height: 1.5 !important;
+    z-index: 99999;
+    display: block !important;
     color: black !important;
   }
 
-  h1 { font-size: 18pt !important; }
-  h2 { font-size: 16pt !important; }
-  h3 { font-size: 14pt !important; }
-  p, td, th { font-size: 11pt !important; }
+  /* Unified Header Styling */
+  .print-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #000;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    width: 100%;
+  }
 
-  /* 7. Table Styling for Print */
+  .print-header-right, .print-header-left {
+    text-align: center;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1.6;
+    width: 25%;
+  }
+
+  .print-header-center {
+    text-align: center;
+    flex: 1;
+  }
+
+  .print-logo {
+    height: 80px;
+    width: auto;
+    object-fit: contain;
+  }
+
+  /* Table Styling */
   table {
     width: 100% !important;
     border-collapse: collapse !important;
-    margin-top: 20px !important;
+    margin-top: 10px;
+    font-size: 12px;
   }
-  
+
   th, td {
     border: 1px solid #000 !important;
     padding: 8px !important;
-    text-align: right !important;
+    text-align: center !important;
+    color: #000 !important;
   }
 
   th {
-    background-color: #f0f0f0 !important;
+    background-color: #f3f3f3 !important;
     font-weight: bold !important;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Hide elements marked as no-print */
+  .no-print {
+    display: none !important;
   }
 }

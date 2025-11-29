@@ -17,6 +17,10 @@ const AttendanceReports: React.FC = () => {
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
 
+  // School Info
+  const SCHOOL_NAME = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
+  const SCHOOL_LOGO = "https://www.raed.net/img?id=1471924";
+
   useEffect(() => {
     const fetchReport = async () => {
       setLoading(true);
@@ -85,8 +89,110 @@ const AttendanceReports: React.FC = () => {
   return (
     <div className="space-y-8 animate-fade-in">
         
-        {/* CSS is handled globally in index.css now */}
+        {/* UNIFIED PRINT TEMPLATE */}
+        <div id="print-area" className="hidden" dir="rtl">
+            {/* Header */}
+            <div className="print-header">
+                <div className="print-header-right">
+                    <p>المملكة العربية السعودية</p>
+                    <p>وزارة التعليم</p>
+                    <p>{SCHOOL_NAME}</p>
+                </div>
+                <div className="print-header-center">
+                    <img src={SCHOOL_LOGO} alt="Logo" className="print-logo mx-auto" />
+                </div>
+                <div className="print-header-left">
+                    <p>Ministry of Education</p>
+                    <p>Student Attendance</p>
+                    <p>{new Date().toLocaleDateString('en-GB')}</p>
+                </div>
+            </div>
 
+            {/* Title & Date */}
+            <div className="text-center mb-6">
+                <h1 className="text-xl font-bold border-b-2 border-black inline-block pb-1">تقرير الغياب اليومي</h1>
+                <p className="text-lg font-mono font-bold mt-2">{selectedDate}</p>
+            </div>
+
+            {/* Stats Summary */}
+            {reportData && (
+                <div className="flex justify-between gap-4 mb-6 text-center border-b border-black pb-4">
+                    <div className="flex-1 border border-black p-2">
+                        <div className="font-bold text-sm">إجمالي الحضور</div>
+                        <div className="text-xl font-bold">{reportData.totalPresent}</div>
+                    </div>
+                    <div className="flex-1 border border-black p-2">
+                        <div className="font-bold text-sm">إجمالي الغياب</div>
+                        <div className="text-xl font-bold">{reportData.totalAbsent}</div>
+                    </div>
+                    <div className="flex-1 border border-black p-2">
+                        <div className="font-bold text-sm">إجمالي التأخر</div>
+                        <div className="text-xl font-bold">{reportData.totalLate}</div>
+                    </div>
+                </div>
+            )}
+
+            {/* Main Table */}
+            {reportData && (
+                <table className="w-full text-right border-collapse">
+                    <thead>
+                        <tr>
+                            <th style={{ width: '5%' }}>م</th>
+                            <th style={{ width: '30%' }}>الطالب</th>
+                            <th style={{ width: '25%' }}>الصف / الفصل</th>
+                            <th style={{ width: '20%' }}>حالة الحضور</th>
+                            <th style={{ width: '20%' }}>حالة العذر</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {reportData.details.length === 0 ? (
+                            <tr>
+                                <td colSpan={5} className="p-8 text-center font-bold">
+                                    سجل نظيف! لا يوجد غياب أو تأخر مسجل اليوم.
+                                </td>
+                            </tr>
+                        ) : (
+                            reportData.details.map((item, index) => {
+                                const excuseStatus = getExcuseStatus(item.studentId, item.studentName);
+                                return (
+                                <tr key={index}>
+                                    <td>{index + 1}</td>
+                                    <td className="font-bold">
+                                        {item.studentName}
+                                        <div className="text-[10px] mt-1">{item.studentId}</div>
+                                    </td>
+                                    <td>{item.grade} - {item.className}</td>
+                                    <td>{item.status === AttendanceStatus.ABSENT ? 'غياب' : 'تأخر'}</td>
+                                    <td>
+                                        {excuseStatus ? (
+                                            excuseStatus === RequestStatus.APPROVED ? 'مقبول' :
+                                            excuseStatus === RequestStatus.REJECTED ? 'مرفوض' : 'قيد المراجعة'
+                                        ) : 'لا يوجد عذر'}
+                                    </td>
+                                </tr>
+                            )})
+                        )}
+                    </tbody>
+                </table>
+            )}
+
+            {/* Footer */}
+            <div className="mt-16 flex justify-between px-12">
+                 <div className="text-center">
+                     <p className="font-bold mb-8">وكيل الشؤون الطلابية</p>
+                     <p>.............................</p>
+                 </div>
+                 <div className="text-center">
+                     <p className="font-bold mb-8">مدير المدرسة</p>
+                     <p>.............................</p>
+                 </div>
+            </div>
+            <div className="mt-8 text-center text-[10px] border-t pt-2">
+                 تم استخراج هذا التقرير آلياً من نظام عذر الإلكتروني - {new Date().toLocaleDateString('ar-SA')}
+            </div>
+        </div>
+
+        {/* SCREEN UI (NO CHANGES TO LOGIC) */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-4 no-print">
             <div>
                 <h1 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
@@ -116,26 +222,10 @@ const AttendanceReports: React.FC = () => {
                 <p className="text-slate-500 font-bold">جاري تحميل التقرير وربط الأعذار...</p>
             </div>
         ) : (
-            <div id="print-area">
+            <div className="no-print">
                 
-                {/* OFFICIAL PRINT HEADER */}
-                <div className="hidden print:flex justify-between items-start border-b-2 border-black pb-6 mb-8">
-                    <div className="text-right font-bold text-sm space-y-1">
-                        <p>المملكة العربية السعودية</p>
-                        <p>وزارة التعليم</p>
-                        <p>إدارة المدرسة</p>
-                    </div>
-                    <div className="text-center">
-                        <h1 className="text-2xl font-bold mb-2">تقرير الغياب اليومي</h1>
-                        <p className="text-lg font-mono font-bold">{selectedDate}</p>
-                    </div>
-                    <div className="text-left">
-                        <img src="https://www.raed.net/img?id=1471924" alt="Logo" className="h-24 object-contain" />
-                    </div>
-                </div>
-
                 {/* AI Section (No Print) */}
-                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-6 rounded-2xl border border-indigo-100 no-print shadow-sm">
+                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-6 rounded-2xl border border-indigo-100 no-print shadow-sm mb-8">
                     <div className="flex justify-between items-start mb-4">
                         <div className="flex items-center gap-2 text-indigo-900 font-bold">
                             <Sparkles size={20} className="text-amber-500"/>
@@ -172,38 +262,38 @@ const AttendanceReports: React.FC = () => {
                     )}
                 </div>
 
-                {/* Summary Cards - Styled for Print too */}
-                <div className="grid grid-cols-3 gap-6 print:grid print:grid-cols-3 print:gap-4 mb-8">
-                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-center print:border-black print:p-2">
-                        <span className="block text-4xl font-bold text-emerald-700 mb-1 print:text-black">{reportData.totalPresent}</span>
-                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider print:text-black">حضور</span>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-3 gap-6 mb-8">
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-center">
+                        <span className="block text-4xl font-bold text-emerald-700 mb-1">{reportData.totalPresent}</span>
+                        <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">حضور</span>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-center print:border-black print:p-2">
-                        <span className="block text-4xl font-bold text-red-700 mb-1 print:text-black">{reportData.totalAbsent}</span>
-                        <span className="text-xs font-bold text-red-600 uppercase tracking-wider print:text-black">غياب</span>
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-center">
+                        <span className="block text-4xl font-bold text-red-700 mb-1">{reportData.totalAbsent}</span>
+                        <span className="text-xs font-bold text-red-600 uppercase tracking-wider">غياب</span>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-center print:border-black print:p-2">
-                        <span className="block text-4xl font-bold text-amber-700 mb-1 print:text-black">{reportData.totalLate}</span>
-                        <span className="text-xs font-bold text-amber-600 uppercase tracking-wider print:text-black">تأخر</span>
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm text-center">
+                        <span className="block text-4xl font-bold text-amber-700 mb-1">{reportData.totalLate}</span>
+                        <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">تأخر</span>
                     </div>
                 </div>
 
                 {/* Detailed Table */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden print:border-none print:shadow-none">
-                    <table className="w-full text-right border-collapse print:w-full">
-                        <thead className="bg-slate-50 text-slate-500 text-xs font-bold uppercase border-b border-slate-200 print:bg-gray-200 print:text-black">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <table className="w-full text-right border-collapse">
+                        <thead className="bg-slate-50 text-slate-500 text-xs font-bold uppercase border-b border-slate-200">
                             <tr>
-                                <th className="p-4 print:p-2 print:border print:border-black">الطالب</th>
-                                <th className="p-4 print:p-2 print:border print:border-black">المرحلة</th>
-                                <th className="p-4 print:p-2 print:border print:border-black">حالة الحضور</th>
-                                <th className="p-4 print:p-2 print:border print:border-black">حالة العذر</th>
+                                <th className="p-4">الطالب</th>
+                                <th className="p-4">المرحلة</th>
+                                <th className="p-4">حالة الحضور</th>
+                                <th className="p-4">حالة العذر</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 text-sm print:text-black">
+                        <tbody className="divide-y divide-slate-100 text-sm">
                             {reportData.details.length === 0 ? (
                                 <tr>
-                                    <td colSpan={4} className="p-12 text-center text-slate-400 font-bold flex flex-col items-center justify-center print:border print:border-black">
-                                        <CheckCircle size={48} className="mb-2 text-emerald-200 print:hidden"/>
+                                    <td colSpan={4} className="p-12 text-center text-slate-400 font-bold flex flex-col items-center justify-center">
+                                        <CheckCircle size={48} className="mb-2 text-emerald-200"/>
                                         سجل نظيف! لا يوجد غياب أو تأخر مسجل اليوم.
                                     </td>
                                 </tr>
@@ -211,26 +301,26 @@ const AttendanceReports: React.FC = () => {
                                 reportData.details.map((item, index) => {
                                     const excuseStatus = getExcuseStatus(item.studentId, item.studentName);
                                     return (
-                                    <tr key={index} className="hover:bg-blue-50/30 transition-colors group print:hover:bg-transparent">
-                                        <td className="p-4 print:p-2 print:border print:border-black">
+                                    <tr key={index} className="hover:bg-blue-50/30 transition-colors group">
+                                        <td className="p-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-xs border border-slate-200 print:hidden">
+                                                <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-xs border border-slate-200">
                                                     {item.studentName.charAt(0)}
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-slate-800 print:text-black">{item.studentName}</p>
-                                                    <p className="text-[10px] text-slate-400 font-mono hidden group-hover:block transition-all print:block print:text-black">{item.studentId || 'ID Missing'}</p>
+                                                    <p className="font-bold text-slate-800">{item.studentName}</p>
+                                                    <p className="text-[10px] text-slate-400 font-mono hidden group-hover:block transition-all">{item.studentId || 'ID Missing'}</p>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="p-4 print:p-2 print:border print:border-black">
+                                        <td className="p-4">
                                             <div className="flex flex-col">
-                                                <span className="font-bold text-slate-700 print:text-black">{item.grade}</span>
-                                                <span className="text-xs text-slate-500 print:text-black">فصل {item.className}</span>
+                                                <span className="font-bold text-slate-700">{item.grade}</span>
+                                                <span className="text-xs text-slate-500">فصل {item.className}</span>
                                             </div>
                                         </td>
-                                        <td className="p-4 print:p-2 print:border print:border-black">
-                                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold print:bg-white print:text-black print:border-0 print:p-0 ${
+                                        <td className="p-4">
+                                            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold ${
                                                 item.status === AttendanceStatus.ABSENT 
                                                 ? 'bg-red-50 text-red-700 border border-red-100' 
                                                 : 'bg-amber-50 text-amber-700 border border-amber-100'
@@ -238,9 +328,9 @@ const AttendanceReports: React.FC = () => {
                                                 {item.status === AttendanceStatus.ABSENT ? 'غياب' : 'تأخر'}
                                             </span>
                                         </td>
-                                        <td className="p-4 print:p-2 print:border print:border-black">
+                                        <td className="p-4">
                                             {excuseStatus ? (
-                                                <span className={`flex items-center gap-1.5 w-fit px-3 py-1.5 rounded-lg text-xs font-bold border print:bg-white print:text-black print:border-0 print:p-0 ${
+                                                <span className={`flex items-center gap-1.5 w-fit px-3 py-1.5 rounded-lg text-xs font-bold border ${
                                                     excuseStatus === RequestStatus.APPROVED ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                                     excuseStatus === RequestStatus.REJECTED ? 'bg-red-50 text-red-700 border-red-200' :
                                                     'bg-amber-50 text-amber-700 border-amber-200'
@@ -249,7 +339,7 @@ const AttendanceReports: React.FC = () => {
                                                      excuseStatus === RequestStatus.REJECTED ? 'مرفوض' : 'قيد المراجعة'}
                                                 </span>
                                             ) : (
-                                                <span className="text-slate-400 text-xs px-2 py-1 bg-slate-50 rounded border border-slate-100 print:bg-white print:text-black print:border-0">لا يوجد عذر</span>
+                                                <span className="text-slate-400 text-xs px-2 py-1 bg-slate-50 rounded border border-slate-100">لا يوجد عذر</span>
                                             )}
                                         </td>
                                     </tr>
@@ -257,21 +347,6 @@ const AttendanceReports: React.FC = () => {
                             )}
                         </tbody>
                     </table>
-                </div>
-
-                <div className="mt-12 flex justify-between px-8 hidden print:flex">
-                     <div className="text-center">
-                         <p className="font-bold mb-8">وكيل الشؤون الطلابية</p>
-                         <p>.............................</p>
-                     </div>
-                     <div className="text-center">
-                         <p className="font-bold mb-8">مدير المدرسة</p>
-                         <p>.............................</p>
-                     </div>
-                </div>
-                
-                <div className="mt-8 text-center text-xs text-slate-400 hidden print:block border-t pt-2">
-                     تم استخراج هذا التقرير آلياً من نظام عذر الإلكتروني - {new Date().toLocaleDateString('ar-SA')}
                 </div>
             </div>
         )}

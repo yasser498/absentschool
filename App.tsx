@@ -19,6 +19,7 @@ import StaffRequests from './pages/staff/Requests';
 import StaffStudents from './pages/staff/Students';
 import StaffDeputy from './pages/staff/Deputy';
 import StaffObservations from './pages/staff/Observations';
+import GateScanner from './pages/staff/GateScanner'; // Import New Page
 import { StaffUser } from './types';
 
 const { HashRouter, Routes, Route, Navigate, useLocation } = ReactRouterDOM as any;
@@ -110,6 +111,9 @@ const AppContent = () => {
         <Route path="/staff/directory" element={<ProtectedStaffRoute requiredPermission="contact_directory"><StaffStudents /></ProtectedStaffRoute>} />
         <Route path="/staff/deputy" element={<ProtectedStaffRoute requiredPermission="deputy"><StaffDeputy /></ProtectedStaffRoute>} />
         <Route path="/staff/observations" element={<ProtectedStaffRoute requiredPermission="observations"><StaffObservations /></ProtectedStaffRoute>} />
+        
+        {/* NEW ROUTE FOR GATE SCANNER */}
+        <Route path="/staff/gate" element={<ProtectedStaffRoute requiredPermission="gate_security"><GateScanner /></ProtectedStaffRoute>} />
         
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

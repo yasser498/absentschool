@@ -20,6 +20,7 @@ export const PERMISSIONS = [
   { key: 'deputy', label: 'وكيل شؤون الطلاب (السلوك)' },
   { key: 'reports', label: 'التقارير والإحصائيات' },
   { key: 'observations', label: 'ملاحظات الطلاب' },
+  { key: 'gate_security', label: 'أمن البوابة (المسح الضوئي)' },
 ];
 
 // Data extracted from the Ministry of Education Behavior PDF

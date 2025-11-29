@@ -209,5 +209,30 @@ export interface SchoolNews {
   isUrgent: boolean;
   createdAt: string;
 }
+// ... (Existing types) ...
+
+// New Types for Appointments
+export interface AppointmentSlot {
+  id: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  maxCapacity: number;
+  currentBookings: number;
+}
+
+export interface Appointment {
+  id: string;
+  slotId: string;
+  studentId: string;
+  studentName: string;
+  parentName: string;
+  parentCivilId: string;
+  visitReason: string;
+  status: 'pending' | 'completed' | 'cancelled' | 'missed';
+  arrivedAt?: string;
+  slot?: AppointmentSlot; // Joined data
+  createdAt: string;
+}
 
 // ... (Rest of types)

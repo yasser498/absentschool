@@ -1,7 +1,6 @@
-
 import React, { useEffect, useState } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle } from 'lucide-react';
+import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine } from 'lucide-react';
 import { StaffUser } from '../types';
 import { getPendingRequestsCountForStaff } from '../services/storage';
 
@@ -206,6 +205,9 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
                <NavItem to="/staff/home" icon={Home} label="القائمة الرئيسية" activeColor="blue" />
 
                <SectionLabel label="المهام اليومية" />
+               {hasPermission('gate_security') && (
+                 <NavItem to="/staff/gate" icon={ScanLine} label="ماسح البوابة" activeColor="teal" />
+               )}
                {hasPermission('attendance') && (
                  <NavItem to="/staff/attendance" icon={ClipboardCheck} label="رصد الغياب" activeColor="emerald" />
                )}

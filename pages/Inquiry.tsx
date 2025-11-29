@@ -1,21 +1,21 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { 
   Search, User, School, Copy, Check, CalendarDays, AlertCircle, Loader2, 
-  FileText, ShieldAlert, Star, MessageSquare, Clock, Plus, Users, Bell, 
+  FileText, ShieldAlert, Star, MessageSquare, Send, CheckCircle, Clock, Plus, Users, Bell, 
   LogOut, ChevronRight, ArrowLeft, Activity, ChevronLeft, Archive, AlertTriangle, 
-  Newspaper, CreditCard, X, CheckCircle, Send, Sparkles
+  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode
 } from 'lucide-react';
 import { 
   getStudentByCivilId, getRequestsByStudentId, getStudentAttendanceHistory, 
   getBehaviorRecords, getStudentObservations, acknowledgeBehavior, 
   acknowledgeObservation, getParentChildren, linkParentToStudent, 
-  getNotifications, markNotificationRead, getStudentPoints, getSchoolNews, generateSmartStudentReport
+  getNotifications, markNotificationRead, getStudentPoints, getSchoolNews, generateSmartStudentReport,
+  getAvailableSlots, bookAppointment, getMyAppointments
 } from '../services/storage';
 import { 
   Student, ExcuseRequest, RequestStatus, AttendanceStatus, BehaviorRecord, 
-  StudentObservation, AppNotification, StudentPoint, SchoolNews 
+  StudentObservation, AppNotification, StudentPoint, SchoolNews, AppointmentSlot, Appointment 
 } from '../types';
 
 const { useNavigate } = ReactRouterDOM as any;
@@ -23,10 +23,12 @@ const { useNavigate } = ReactRouterDOM as any;
 const Inquiry: React.FC = () => {
   const navigate = useNavigate();
   
+  // Auth State
   const [parentCivilId, setParentCivilId] = useState(localStorage.getItem('ozr_parent_id') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('ozr_parent_id'));
   const [authLoading, setAuthLoading] = useState(false);
 
+  // Dashboard State
   const [myChildren, setMyChildren] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -34,22 +36,44 @@ const Inquiry: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDigitalId, setShowDigitalId] = useState(false);
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'attendance' | 'archive' | 'behavior' | 'observations'>('overview');
+  // Tabs including 'visits'
+  const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'attendance' | 'archive' | 'behavior' | 'observations' | 'visits'>('overview');
+  
+  // Data for Selected Student
   const [history, setHistory] = useState<ExcuseRequest[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<{ date: string, status: AttendanceStatus }[]>([]);
   const [behaviorHistory, setBehaviorHistory] = useState<BehaviorRecord[]>([]);
   const [observations, setObservations] = useState<StudentObservation[]>([]);
   const [points, setPoints] = useState<{total: number, history: StudentPoint[]}>({ total: 0, history: [] });
-  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  
+  // Add Child State
   const [newChildId, setNewChildId] = useState('');
   const [isAddingChild, setIsAddingChild] = useState(false);
+
+  // Reply State
+  const [replyMode, setReplyMode] = useState<{ id: string, type: 'behavior' | 'observation' } | null>(null);
+  const [replyContent, setReplyContent] = useState('');
   const [submittingReply, setSubmittingReply] = useState(false);
-  
+
+  // Smart Report State
   const [smartReport, setSmartReport] = useState<string | null>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
+  
+  // Calendar State
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
 
+  // Appointments State
+  const [availableSlots, setAvailableSlots] = useState<AppointmentSlot[]>([]);
+  const [myAppointments, setMyAppointments] = useState<Appointment[]>([]);
+  const [visitReason, setVisitReason] = useState('');
+  const [parentNameForVisit, setParentNameForVisit] = useState('');
+  const [isBooking, setIsBooking] = useState(false);
+  const [bookingSuccess, setBookingSuccess] = useState<Appointment | null>(null);
+
+  // --- AUTHENTICATION ---
   const handleLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!parentCivilId) return;
@@ -87,39 +111,56 @@ const Inquiry: React.FC = () => {
       if (isAuthenticated) loadParentDashboard();
   }, [isAuthenticated]);
 
+  // --- ADD CHILD ---
   const handleAddChild = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newChildId) return;
       setLoading(true);
       try {
           const student = await getStudentByCivilId(newChildId);
-          if (!student) { alert("لم يتم العثور على طالب بهذا الرقم."); } 
-          else { await linkParentToStudent(parentCivilId, student.studentId); await loadParentDashboard(); setNewChildId(''); setIsAddingChild(false); alert("تم الإضافة!"); }
-      } catch (e) { alert("حدث خطأ."); } finally { setLoading(false); }
+          if (!student) {
+              alert("لم يتم العثور على طالب بهذا الرقم.");
+          } else {
+              await linkParentToStudent(parentCivilId, student.studentId);
+              await loadParentDashboard();
+              setNewChildId('');
+              setIsAddingChild(false);
+              alert("تم إضافة الابن بنجاح!");
+          }
+      } catch (e) { alert("حدث خطأ."); }
+      finally { setLoading(false); }
   };
 
+  // --- LOAD STUDENT DETAILS ---
   const handleSelectStudent = async (student: Student) => {
       setSelectedStudent(student);
       setLoading(true);
       try {
-          const [reqs, att, beh, obs, pts] = await Promise.all([
+          const [reqs, att, beh, obs, pts, slots, apps] = await Promise.all([
               getRequestsByStudentId(student.studentId),
               getStudentAttendanceHistory(student.studentId, student.grade, student.className),
               getBehaviorRecords(student.studentId),
               getStudentObservations(student.studentId),
-              getStudentPoints(student.studentId)
+              getStudentPoints(student.studentId),
+              getAvailableSlots(),
+              getMyAppointments(parentCivilId)
           ]);
           setHistory(reqs);
           setAttendanceHistory(att);
           setBehaviorHistory(beh);
           setObservations(obs);
           setPoints(pts);
+          setAvailableSlots(slots);
+          setMyAppointments(apps.filter(a => a.studentId === student.studentId));
           setActiveTab('overview');
-      } catch (e) { console.error(e); } finally { setLoading(false); }
+      } catch (e) { console.error(e); }
+      finally { setLoading(false); }
   };
 
+  // --- UNEXCUSED ABSENCES ---
   const unexcusedAbsences = useMemo(() => {
       if (!attendanceHistory.length) return [];
+      
       return attendanceHistory.filter(record => {
           if (record.status !== AttendanceStatus.ABSENT) return false;
           const hasRequest = history.some(req => req.date === record.date);
@@ -127,6 +168,7 @@ const Inquiry: React.FC = () => {
       });
   }, [attendanceHistory, history]);
 
+  // --- HELPERS ---
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -143,22 +185,24 @@ const Inquiry: React.FC = () => {
       } finally { setSubmittingReply(false); }
   };
 
-  const getDaysInMonth = (date: Date) => {
-      const year = date.getFullYear();
-      const month = date.getMonth();
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const firstDay = new Date(year, month, 1).getDay(); 
-      const days = [];
-      for (let i = 0; i < firstDay; i++) days.push(null);
-      for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
-      return days;
+  const handleSubmitReply = async () => {
+      if (!replyMode || !replyContent.trim()) return;
+      setSubmittingReply(true);
+      try {
+          if (replyMode.type === 'behavior') await acknowledgeBehavior(replyMode.id, replyContent);
+          else await acknowledgeObservation(replyMode.id, replyContent);
+          
+          if(selectedStudent) await handleSelectStudent(selectedStudent);
+          
+          setReplyMode(null); 
+          setReplyContent('');
+          alert("تم إرسال الرد وتأكيد الاطلاع بنجاح");
+      } catch(e) {
+          alert("حدث خطأ");
+      } finally { setSubmittingReply(false); }
   };
-  const getAttendanceStatusForDate = (date: Date) => {
-      const dateStr = date.toISOString().split('T')[0];
-      const record = attendanceHistory.find(r => r.date === dateStr);
-      return record ? record.status : null;
-  };
-  
+
+  // --- SMART REPORT ---
   const handleGenerateSmartReport = async () => {
       if (!selectedStudent) return;
       setGeneratingReport(true);
@@ -170,33 +214,70 @@ const Inquiry: React.FC = () => {
               points.total
           );
           setSmartReport(report);
-      } catch (e) { alert("فشل التوليد"); }
-      finally { setGeneratingReport(false); }
+      } catch (e) {
+          alert("فشل توليد التقرير، حاول لاحقاً.");
+      } finally {
+          setGeneratingReport(false);
+      }
   };
 
-  // ... (Rest of Reply Logic same as previous file)
-  const handleSubmitReply = async () => {
-      if (!replyMode || !replyContent.trim()) return;
-      setSubmittingReply(true);
+  // --- BOOKING ---
+  const handleBookSlot = async (slot: AppointmentSlot) => {
+      if (!visitReason || !parentNameForVisit) { 
+          alert("يرجى إدخال اسم ولي الأمر وسبب الزيارة"); 
+          return; 
+      }
+      if (!selectedStudent) return;
+      
+      setIsBooking(true);
       try {
-          if (replyMode.type === 'behavior') await acknowledgeBehavior(replyMode.id, replyContent);
-          else await acknowledgeObservation(replyMode.id, replyContent);
-          if(selectedStudent) await handleSelectStudent(selectedStudent);
-          setReplyMode(null); 
-          setReplyContent('');
-          alert("تم إرسال الرد وتأكيد الاطلاع بنجاح");
-      } catch(e) { alert("حدث خطأ"); } 
-      finally { setSubmittingReply(false); }
+          const appt = await bookAppointment({
+              slotId: slot.id,
+              studentId: selectedStudent.studentId,
+              studentName: selectedStudent.name,
+              parentName: parentNameForVisit,
+              parentCivilId: parentCivilId,
+              visitReason: visitReason
+          });
+          setBookingSuccess(appt);
+          setVisitReason('');
+          // Refresh lists
+          const [newSlots, newApps] = await Promise.all([getAvailableSlots(), getMyAppointments(parentCivilId)]);
+          setAvailableSlots(newSlots);
+          setMyAppointments(newApps.filter(a => a.studentId === selectedStudent.studentId));
+      } catch (e: any) {
+          alert(e.message || "حدث خطأ أثناء الحجز");
+      } finally {
+          setIsBooking(false);
+      }
   };
 
-  // Reply State Vars
-  const [replyMode, setReplyMode] = useState<{ id: string, type: 'behavior' | 'observation' } | null>(null);
-  const [replyContent, setReplyContent] = useState('');
+  // --- CALENDAR ---
+  const getDaysInMonth = (date: Date) => {
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const firstDay = new Date(year, month, 1).getDay(); 
+      
+      const days = [];
+      for (let i = 0; i < firstDay; i++) {
+          days.push(null);
+      }
+      for (let i = 1; i <= daysInMonth; i++) {
+          days.push(new Date(year, month, i));
+      }
+      return days;
+  };
+
+  const getAttendanceStatusForDate = (date: Date) => {
+      const dateStr = date.toISOString().split('T')[0];
+      const record = attendanceHistory.find(r => r.date === dateStr);
+      return record ? record.status : null;
+  };
+
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-
   if (!isAuthenticated) {
-      // ... (Login View same as previous)
       return (
           <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans">
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 relative overflow-hidden">
@@ -230,9 +311,10 @@ const Inquiry: React.FC = () => {
       );
   }
 
+  // --- MAIN DASHBOARD ---
   return (
     <div className="min-h-screen bg-slate-50 pb-20 font-sans relative">
-        {/* Header ... (Same) */}
+        {/* Header */}
         <div className="bg-white sticky top-0 z-30 border-b border-slate-100 shadow-sm">
             <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-2 font-bold text-slate-800">
@@ -248,7 +330,7 @@ const Inquiry: React.FC = () => {
             </div>
         </div>
 
-        {/* Notifications ... (Same) */}
+        {/* Notifications Panel */}
         {showNotifications && (
             <div className="max-w-5xl mx-auto px-4 relative z-20">
                 <div className="absolute top-2 left-4 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
@@ -268,7 +350,7 @@ const Inquiry: React.FC = () => {
 
         <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
             
-            {/* News ... (Same) */}
+            {/* NEW: SCHOOL NEWS TICKER */}
             {news.length > 0 && !selectedStudent && (
                 <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden p-4 relative animate-fade-in">
                     <div className="flex items-center gap-2 mb-3">
@@ -280,13 +362,17 @@ const Inquiry: React.FC = () => {
                             <div key={n.id} className={`p-3 rounded-xl border-l-4 ${n.isUrgent ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}`}>
                                 <h4 className="font-bold text-sm text-slate-900">{n.title}</h4>
                                 <p className="text-xs text-slate-600 mt-1 line-clamp-2">{n.content}</p>
+                                <div className="mt-2 text-[10px] text-slate-400 flex justify-between">
+                                    <span>{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
+                                    <span>بواسطة: {n.author}</span>
+                                </div>
                             </div>
                         ))}
                     </div>
                 </div>
             )}
 
-            {/* Children List ... (Same) */}
+            {/* My Children List */}
             {!selectedStudent ? (
                 <div className="animate-fade-in space-y-6">
                     <div className="flex justify-between items-center">
@@ -332,6 +418,7 @@ const Inquiry: React.FC = () => {
                     )}
                 </div>
             ) : (
+                // SELECTED STUDENT VIEW
                 <div className="animate-fade-in space-y-6">
                     <button onClick={() => setSelectedStudent(null)} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 font-bold mb-4">
                         <ArrowLeft size={18}/> العودة للقائمة
@@ -366,7 +453,8 @@ const Inquiry: React.FC = () => {
                     <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                         {[
                             { id: 'overview', label: 'ملخص', icon: Activity },
-                            { id: 'report', label: 'التقرير الذكي', icon: Sparkles }, // NEW
+                            { id: 'visits', label: 'حجز موعد', icon: CalendarCheck },
+                            { id: 'report', label: 'التقرير الذكي', icon: Sparkles },
                             { id: 'attendance', label: 'التقويم', icon: CalendarDays },
                             { id: 'archive', label: 'أرشيف الأعذار', icon: Archive },
                             { id: 'behavior', label: 'السلوك', icon: ShieldAlert },
@@ -380,6 +468,7 @@ const Inquiry: React.FC = () => {
 
                     {loading ? <div className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600"/></div> : (
                         <div className="min-h-[300px]">
+                            
                             {/* OVERVIEW */}
                             {activeTab === 'overview' && (
                                 <div className="space-y-6 animate-fade-in">
@@ -400,8 +489,8 @@ const Inquiry: React.FC = () => {
                                             </div>
                                         </div>
                                     )}
-                                    {/* ... Existing Grid ... */}
-                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                                             <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Clock className="text-blue-500"/> الحضور والغياب</h3>
                                             <div className="flex justify-between text-center">
@@ -424,47 +513,162 @@ const Inquiry: React.FC = () => {
                                             ) : <p className="text-slate-400 text-sm">لا يوجد نقاط مكتسبة بعد.</p>}
                                         </div>
                                     </div>
-                                    {/* ... (Rest of overview) ... */}
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                            <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2"><ShieldAlert size={18} className="text-red-500"/> آخر مخالفة سلوكية</h3>
+                                            {behaviorHistory.length > 0 ? (
+                                                <div className="bg-red-50 p-3 rounded-xl border border-red-100">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="font-bold text-red-800 text-sm">{behaviorHistory[0].violationName}</span>
+                                                        <span className="text-xs text-red-600 bg-white px-2 py-0.5 rounded">{behaviorHistory[0].date}</span>
+                                                    </div>
+                                                    <p className="text-xs text-red-700">{behaviorHistory[0].actionTaken}</p>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-slate-400 flex items-center gap-2"><CheckCircle size={16} className="text-emerald-500"/> سجل الطالب نظيف من المخالفات.</p>
+                                            )}
+                                        </div>
+
+                                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                            <h3 className="font-bold text-slate-800 mb-3 flex items-center gap-2"><MessageSquare size={18} className="text-purple-500"/> آخر ملاحظة من المعلم</h3>
+                                            {observations.length > 0 ? (
+                                                <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="font-bold text-purple-900 text-sm">{observations[0].staffName}</span>
+                                                        <span className="text-xs text-purple-600 bg-white px-2 py-0.5 rounded">{observations[0].date}</span>
+                                                    </div>
+                                                    <p className="text-xs text-purple-800 line-clamp-2">{observations[0].content}</p>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-slate-400">لا توجد ملاحظات مسجلة.</p>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
-                            {/* NEW: SMART REPORT TAB */}
+                            {/* SMART REPORT */}
                             {activeTab === 'report' && (
                                 <div className="space-y-6 animate-fade-in">
                                     {!smartReport ? (
-                                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-3xl p-8 text-center border border-indigo-100">
-                                            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
-                                                <Sparkles size={32} className="text-purple-600" />
-                                            </div>
-                                            <h3 className="text-xl font-bold text-slate-800 mb-2">التقرير التربوي الذكي</h3>
-                                            <p className="text-slate-500 mb-6 max-w-md mx-auto">سيقوم المساعد الذكي بتحليل بيانات ابنك (الغياب، السلوك، التميز) وكتابة رسالة تربوية مخصصة لك.</p>
-                                            <button 
-                                                onClick={handleGenerateSmartReport} 
-                                                disabled={generatingReport}
-                                                className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 mx-auto"
-                                            >
-                                                {generatingReport ? <Loader2 className="animate-spin"/> : <Sparkles size={20}/>}
+                                        <div className="text-center py-12 bg-white rounded-3xl border border-slate-200">
+                                            <Sparkles size={48} className="mx-auto mb-4 text-purple-500 animate-pulse"/>
+                                            <h3 className="font-bold text-slate-800 text-lg">التقرير التربوي الذكي</h3>
+                                            <p className="text-slate-500 max-w-xs mx-auto mt-2 text-sm">سيقوم النظام بتحليل بيانات ابنك (الغياب، السلوك، التميز) وكتابة تقرير تربوي شامل لك.</p>
+                                            <button onClick={handleGenerateSmartReport} disabled={generatingReport} className="mt-6 bg-purple-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition-all flex items-center gap-2 mx-auto">
+                                                {generatingReport ? <Loader2 className="animate-spin" size={20}/> : <Sparkles size={20}/>}
                                                 توليد التقرير الآن
                                             </button>
                                         </div>
                                     ) : (
-                                        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm relative">
-                                            <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
-                                                <div className="bg-purple-100 p-2 rounded-lg"><Sparkles className="text-purple-600" size={20}/></div>
-                                                <h3 className="text-lg font-bold text-slate-800">تقرير المساعد الذكي</h3>
-                                            </div>
-                                            <div className="prose prose-indigo max-w-none text-slate-700 leading-loose whitespace-pre-line text-justify">
+                                        <div className="bg-white p-6 rounded-3xl border border-purple-100 shadow-lg relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-blue-500"></div>
+                                            <h3 className="font-bold text-purple-800 mb-4 flex items-center gap-2"><Sparkles size={18}/> تقرير الأداء العام</h3>
+                                            <div className="prose prose-sm max-w-none text-slate-700 leading-relaxed whitespace-pre-line font-medium">
                                                 {smartReport}
                                             </div>
-                                            <div className="mt-6 pt-6 border-t border-slate-100 text-center">
-                                                <button onClick={() => setSmartReport(null)} className="text-sm text-slate-400 hover:text-purple-600 font-bold">إعادة التحليل</button>
-                                            </div>
+                                            <button onClick={() => setSmartReport(null)} className="mt-6 text-slate-400 text-xs hover:text-purple-600 flex items-center gap-1">
+                                                <RefreshCw size={12}/> إعادة التحليل
+                                            </button>
                                         </div>
                                     )}
                                 </div>
                             )}
 
-                            {/* ... (Other Tabs: Attendance, Behavior, Archive, Observations - Unchanged) ... */}
+                            {/* VISITS */}
+                            {activeTab === 'visits' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    {/* Success Ticket */}
+                                    {bookingSuccess && (
+                                        <div className="bg-teal-600 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden animate-fade-in-up">
+                                            <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
+                                            <div className="flex justify-between items-start relative z-10">
+                                                <div>
+                                                    <h3 className="text-2xl font-bold mb-1 flex items-center gap-2"><CheckCircle/> تم تأكيد الحجز!</h3>
+                                                    <p className="opacity-90 text-sm">يرجى إبراز هذا الرمز عند بوابة المدرسة</p>
+                                                </div>
+                                                <button onClick={() => setBookingSuccess(null)} className="bg-white/20 p-1 rounded-full hover:bg-white/30"><X size={20}/></button>
+                                            </div>
+                                            
+                                            <div className="mt-6 bg-white text-slate-900 rounded-2xl p-4 flex flex-col md:flex-row items-center gap-6">
+                                                <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                                                     <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${bookingSuccess.id}`} alt="Booking QR" className="w-32 h-32 mix-blend-multiply"/>
+                                                </div>
+                                                <div className="flex-1 text-center md:text-right space-y-2 w-full">
+                                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                                        <div><p className="text-slate-400 font-bold text-xs">التاريخ</p><p className="font-bold">{bookingSuccess.slot?.date}</p></div>
+                                                        <div><p className="text-slate-400 font-bold text-xs">الوقت</p><p className="font-bold">{bookingSuccess.slot?.startTime} - {bookingSuccess.slot?.endTime}</p></div>
+                                                        <div><p className="text-slate-400 font-bold text-xs">الزائر</p><p className="font-bold">{bookingSuccess.parentName}</p></div>
+                                                        <div><p className="text-slate-400 font-bold text-xs">رقم الحجز</p><p className="font-mono font-bold text-teal-700">{bookingSuccess.id.slice(0,6)}</p></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* My Pending Appointments */}
+                                    {myAppointments.filter(a => a.status === 'pending').length > 0 && !bookingSuccess && (
+                                        <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl">
+                                            <h3 className="font-bold text-amber-800 mb-3 flex items-center gap-2"><Clock size={18}/> حجوزاتك القادمة</h3>
+                                            {myAppointments.filter(a => a.status === 'pending').map(a => (
+                                                <div key={a.id} className="bg-white p-3 rounded-xl border border-amber-100 flex justify-between items-center">
+                                                    <div>
+                                                        <p className="font-bold text-slate-800">{a.slot?.date}</p>
+                                                        <p className="text-xs text-slate-500">{a.slot?.startTime} - {a.slot?.endTime}</p>
+                                                    </div>
+                                                    <button onClick={() => setBookingSuccess(a)} className="text-xs bg-amber-100 text-amber-800 px-3 py-1.5 rounded-lg font-bold">عرض التذكرة</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Booking Form */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                        <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><CalendarCheck className="text-blue-600"/> المواعيد المتاحة للحجز</h3>
+                                        
+                                        {availableSlots.length === 0 ? (
+                                            <div className="text-center py-10 text-slate-400">
+                                                <CalendarDays size={40} className="mx-auto mb-2 opacity-30"/>
+                                                <p>لا توجد مواعيد متاحة حالياً. يرجى المحاولة لاحقاً.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-6">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 block mb-1.5">اسم ولي الأمر (الزائر)</label>
+                                                        <input value={parentNameForVisit} onChange={e => setParentNameForVisit(e.target.value)} className="w-full p-3 border rounded-xl font-bold text-sm bg-slate-50 focus:ring-2 focus:ring-blue-100 outline-none" placeholder="الاسم الثلاثي..."/>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-500 block mb-1.5">سبب الزيارة</label>
+                                                        <input value={visitReason} onChange={e => setVisitReason(e.target.value)} className="w-full p-3 border rounded-xl font-bold text-sm bg-slate-50 focus:ring-2 focus:ring-blue-100 outline-none" placeholder="مثال: مناقشة مستوى الطالب..."/>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                    {availableSlots.map(slot => (
+                                                        <button 
+                                                            key={slot.id} 
+                                                            onClick={() => handleBookSlot(slot)}
+                                                            disabled={isBooking || slot.currentBookings >= slot.maxCapacity}
+                                                            className={`border rounded-xl p-4 text-right transition-all relative overflow-hidden group ${slot.currentBookings >= slot.maxCapacity ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:border-blue-400 hover:shadow-md bg-white'}`}
+                                                        >
+                                                            {slot.currentBookings >= slot.maxCapacity && <div className="absolute inset-0 flex items-center justify-center bg-slate-100/80 font-bold text-slate-500 z-10">ممتلئ</div>}
+                                                            <p className="font-bold text-blue-900">{slot.date}</p>
+                                                            <p className="text-sm text-slate-600 mt-1 font-mono">{slot.startTime} - {slot.endTime}</p>
+                                                            <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                                                <div className="bg-blue-500 h-full rounded-full" style={{width: `${(slot.currentBookings/slot.maxCapacity)*100}%`}}></div>
+                                                            </div>
+                                                            <p className="text-[10px] text-slate-400 mt-1 text-left">المتبقي: {slot.maxCapacity - slot.currentBookings}</p>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {activeTab === 'attendance' && (
                                 <div className="space-y-4 animate-fade-in">
                                     <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -475,23 +679,32 @@ const Inquiry: React.FC = () => {
                                                 <button onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200"><ChevronLeft size={16}/></button>
                                             </div>
                                         </div>
-                                        <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-400 mb-2"><span>أحد</span><span>اثنين</span><span>ثلاثاء</span><span>أربعاء</span><span>خميس</span><span>جمعة</span><span>سبت</span></div>
+                                        
+                                        <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-400 mb-2">
+                                            <span>أحد</span><span>اثنين</span><span>ثلاثاء</span><span>أربعاء</span><span>خميس</span><span>جمعة</span><span>سبت</span>
+                                        </div>
                                         <div className="grid grid-cols-7 gap-2">
                                             {getDaysInMonth(calendarMonth).map((day, idx) => {
                                                 if (!day) return <div key={idx} className="aspect-square"></div>;
                                                 const status = getAttendanceStatusForDate(day);
                                                 let bgClass = "bg-slate-50 text-slate-700 border-slate-100";
+                                                
                                                 if (status === 'ABSENT') bgClass = "bg-red-100 text-red-700 border-red-200 font-bold";
                                                 else if (status === 'LATE') bgClass = "bg-amber-100 text-amber-700 border-amber-200 font-bold";
                                                 else if (status === 'PRESENT') bgClass = "bg-emerald-100 text-emerald-700 border-emerald-200 font-bold";
-                                                return (<div key={idx} className={`aspect-square flex items-center justify-center rounded-xl border ${bgClass} text-sm transition-all hover:scale-105 shadow-sm`}>{day.getDate()}</div>);
+
+                                                return (
+                                                    <div key={idx} className={`aspect-square flex items-center justify-center rounded-xl border ${bgClass} text-sm transition-all hover:scale-105 shadow-sm`}>
+                                                        {day.getDate()}
+                                                    </div>
+                                                );
                                             })}
                                         </div>
                                     </div>
                                 </div>
                             )}
-                            
-                             {activeTab === 'archive' && (
+
+                            {activeTab === 'archive' && (
                                 <div className="space-y-4 animate-fade-in">
                                     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                                         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Archive className="text-blue-500"/> أرشيف الأعذار المقدمة</h3>
@@ -506,8 +719,13 @@ const Inquiry: React.FC = () => {
                                                     <div key={req.id} className="border border-slate-100 rounded-xl p-4 hover:bg-slate-50 transition-colors">
                                                         <div className="flex justify-between items-start mb-2">
                                                             <span className="font-mono font-bold text-slate-800">{req.date}</span>
-                                                            <span className={`px-2 py-1 rounded-lg text-xs font-bold ${req.status === RequestStatus.APPROVED ? 'bg-emerald-100 text-emerald-700' : req.status === RequestStatus.REJECTED ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                                {req.status === RequestStatus.APPROVED ? 'مقبول' : req.status === RequestStatus.REJECTED ? 'مرفوض' : 'قيد المراجعة'}
+                                                            <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+                                                                req.status === RequestStatus.APPROVED ? 'bg-emerald-100 text-emerald-700' :
+                                                                req.status === RequestStatus.REJECTED ? 'bg-red-100 text-red-700' :
+                                                                'bg-amber-100 text-amber-700'
+                                                            }`}>
+                                                                {req.status === RequestStatus.APPROVED ? 'مقبول' : 
+                                                                 req.status === RequestStatus.REJECTED ? 'مرفوض' : 'قيد المراجعة'}
                                                             </span>
                                                         </div>
                                                         <p className="text-sm font-bold text-slate-700 mb-1">{req.reason}</p>
@@ -534,24 +752,40 @@ const Inquiry: React.FC = () => {
                                                 <div className="mt-3">
                                                     {replyMode?.id === rec.id && replyMode.type === 'behavior' ? (
                                                         <div className="animate-fade-in">
-                                                            <textarea className="w-full p-3 border rounded-xl text-sm mb-2 outline-none focus:ring-2 focus:ring-blue-100" placeholder="اكتب ردك أو ملاحظتك هنا..." value={replyContent} onChange={e => setReplyContent(e.target.value)} autoFocus></textarea>
+                                                            <textarea 
+                                                                className="w-full p-3 border rounded-xl text-sm mb-2 outline-none focus:ring-2 focus:ring-blue-100" 
+                                                                placeholder="اكتب ردك أو ملاحظتك هنا..."
+                                                                value={replyContent}
+                                                                onChange={e => setReplyContent(e.target.value)}
+                                                                autoFocus
+                                                            ></textarea>
                                                             <div className="flex gap-2 justify-end">
                                                                 <button onClick={() => { setReplyMode(null); setReplyContent(''); }} className="bg-slate-100 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">إلغاء</button>
-                                                                <button onClick={handleSubmitReply} disabled={submittingReply} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1">{submittingReply ? <Loader2 className="animate-spin" size={14}/> : <Send size={14}/>} إرسال</button>
+                                                                <button onClick={handleSubmitReply} disabled={submittingReply} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1">
+                                                                    {submittingReply ? <Loader2 className="animate-spin" size={14}/> : <Send size={14}/>} إرسال
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        <button onClick={() => { setReplyMode({id: rec.id, type: 'behavior'}); setReplyContent(''); }} className="w-full bg-red-50 text-red-700 py-2 rounded-lg text-sm font-bold border border-red-100 hover:bg-red-100 transition-colors">تأكيد الاطلاع والرد</button>
+                                                        <button onClick={() => { setReplyMode({id: rec.id, type: 'behavior'}); setReplyContent(''); }} className="w-full bg-red-50 text-red-700 py-2 rounded-lg text-sm font-bold border border-red-100 hover:bg-red-100 transition-colors">
+                                                            تأكيد الاطلاع والرد
+                                                        </button>
                                                     )}
                                                 </div>
                                             ) : (
-                                                <div className="mt-3 bg-slate-50 p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2 border border-slate-100"><CheckCircle size={16} className="text-emerald-500"/><div><span className="font-bold text-emerald-700 block">تم الاطلاع</span>{rec.parentFeedback && <span className="text-slate-600 mt-1 block">رد ولي الأمر: {rec.parentFeedback}</span>}</div></div>
+                                                <div className="mt-3 bg-slate-50 p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2 border border-slate-100">
+                                                    <CheckCircle size={16} className="text-emerald-500"/>
+                                                    <div>
+                                                        <span className="font-bold text-emerald-700 block">تم الاطلاع</span>
+                                                        {rec.parentFeedback && <span className="text-slate-600 mt-1 block">رد ولي الأمر: {rec.parentFeedback}</span>}
+                                                    </div>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
                                 </div>
                             )}
-
+                            
                             {activeTab === 'observations' && (
                                 <div className="space-y-4 animate-fade-in">
                                     {observations.length === 0 ? <p className="text-center py-10 text-slate-400">لا توجد ملاحظات.</p> : observations.map(obs => (
@@ -559,22 +793,39 @@ const Inquiry: React.FC = () => {
                                             <div className={`absolute top-0 right-0 w-1 h-full ${obs.sentiment === 'positive' ? 'bg-emerald-500' : obs.sentiment === 'negative' ? 'bg-red-500' : 'bg-slate-300'}`}></div>
                                             <p className="text-sm font-bold text-slate-800 mb-2">{obs.staffName}</p>
                                             <p className="text-sm text-slate-600 mb-4">{obs.content}</p>
+                                            
                                             {!obs.parentViewed ? (
                                                 <div className="mt-3 pt-3 border-t border-slate-100">
                                                     {replyMode?.id === obs.id && replyMode.type === 'observation' ? (
                                                         <div className="animate-fade-in">
-                                                            <textarea className="w-full p-3 border rounded-xl text-sm mb-2 outline-none focus:ring-2 focus:ring-blue-100" placeholder="اكتب ردك أو ملاحظتك هنا..." value={replyContent} onChange={e => setReplyContent(e.target.value)} autoFocus></textarea>
+                                                            <textarea 
+                                                                className="w-full p-3 border rounded-xl text-sm mb-2 outline-none focus:ring-2 focus:ring-blue-100" 
+                                                                placeholder="اكتب ردك أو ملاحظتك هنا..."
+                                                                value={replyContent}
+                                                                onChange={e => setReplyContent(e.target.value)}
+                                                                autoFocus
+                                                            ></textarea>
                                                             <div className="flex gap-2 justify-end">
                                                                 <button onClick={() => { setReplyMode(null); setReplyContent(''); }} className="bg-slate-100 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">إلغاء</button>
-                                                                <button onClick={handleSubmitReply} disabled={submittingReply} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1">{submittingReply ? <Loader2 className="animate-spin" size={14}/> : <Send size={14}/>} إرسال</button>
+                                                                <button onClick={handleSubmitReply} disabled={submittingReply} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1">
+                                                                    {submittingReply ? <Loader2 className="animate-spin" size={14}/> : <Send size={14}/>} إرسال
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        <button onClick={() => { setReplyMode({id: obs.id, type: 'observation'}); setReplyContent(''); }} className="w-full bg-blue-50 text-blue-700 py-2 rounded-lg text-sm font-bold border border-blue-100 hover:bg-blue-100 transition-colors">تأكيد الاطلاع والرد</button>
+                                                        <button onClick={() => { setReplyMode({id: obs.id, type: 'observation'}); setReplyContent(''); }} className="w-full bg-blue-50 text-blue-700 py-2 rounded-lg text-sm font-bold border border-blue-100 hover:bg-blue-100 transition-colors">
+                                                            تأكيد الاطلاع والرد
+                                                        </button>
                                                     )}
                                                 </div>
                                             ) : (
-                                                <div className="mt-3 bg-slate-50 p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2 border border-slate-100"><CheckCircle size={16} className="text-emerald-500"/><div><span className="font-bold text-emerald-700 block">تم الاطلاع</span>{obs.parentFeedback && <span className="text-slate-600 mt-1 block">رد ولي الأمر: {obs.parentFeedback}</span>}</div></div>
+                                                <div className="mt-3 bg-slate-50 p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2 border border-slate-100">
+                                                    <CheckCircle size={16} className="text-emerald-500"/>
+                                                    <div>
+                                                        <span className="font-bold text-emerald-700 block">تم الاطلاع</span>
+                                                        {obs.parentFeedback && <span className="text-slate-600 mt-1 block">رد ولي الأمر: {obs.parentFeedback}</span>}
+                                                    </div>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
@@ -586,7 +837,6 @@ const Inquiry: React.FC = () => {
             )}
         </div>
 
-        {/* DIGITAL ID MODAL */}
         {showDigitalId && selectedStudent && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fade-in" onClick={() => setShowDigitalId(false)}>
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden relative" onClick={e => e.stopPropagation()}>

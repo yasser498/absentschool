@@ -1,3 +1,4 @@
+
 import React from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import Layout from './components/Layout';
@@ -19,7 +20,8 @@ import StaffRequests from './pages/staff/Requests';
 import StaffStudents from './pages/staff/Students';
 import StaffDeputy from './pages/staff/Deputy';
 import StaffObservations from './pages/staff/Observations';
-import GateScanner from './pages/staff/GateScanner'; // Import New Page
+import GateScanner from './pages/staff/GateScanner'; 
+import ExitPermissions from './pages/staff/ExitPermissions'; // Import New Page
 import { StaffUser } from './types';
 
 const { HashRouter, Routes, Route, Navigate, useLocation } = ReactRouterDOM as any;
@@ -112,8 +114,9 @@ const AppContent = () => {
         <Route path="/staff/deputy" element={<ProtectedStaffRoute requiredPermission="deputy"><StaffDeputy /></ProtectedStaffRoute>} />
         <Route path="/staff/observations" element={<ProtectedStaffRoute requiredPermission="observations"><StaffObservations /></ProtectedStaffRoute>} />
         
-        {/* NEW ROUTE FOR GATE SCANNER */}
+        {/* NEW ROUTES */}
         <Route path="/staff/gate" element={<ProtectedStaffRoute requiredPermission="gate_security"><GateScanner /></ProtectedStaffRoute>} />
+        <Route path="/staff/exit-permissions" element={<ProtectedStaffRoute requiredPermission="exit_perms"><ExitPermissions /></ProtectedStaffRoute>} />
         
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

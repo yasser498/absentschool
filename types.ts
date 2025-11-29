@@ -100,7 +100,7 @@ export interface BehaviorRecord {
 
 export interface AdminInsight {
   id: string;
-  targetRole: 'deputy' | 'counselor';
+  targetRole: 'deputy' | 'counselor' | 'bot_context' | 'teachers';
   content: string;
   createdAt: string;
   isRead: boolean;
@@ -122,24 +122,6 @@ export interface Referral {
   createdAt?: string;
 }
 
-export interface StudentObservation {
-  id: string;
-  studentId: string;
-  studentName: string;
-  grade: string;
-  className: string;
-  date: string;
-  type: 'academic' | 'behavioral' | 'positive' | 'general';
-  content: string;
-  staffId: string;
-  staffName: string;
-  createdAt?: string;
-  // Parent Feedback
-  parentViewed?: boolean;
-  parentFeedback?: string;
-  parentViewedAt?: string;
-}
-
 // New: Guidance Session (For Counselor)
 export interface GuidanceSession {
   id: string;
@@ -151,7 +133,6 @@ export interface GuidanceSession {
   recommendations: string;
   status: 'ongoing' | 'completed';
 }
-// ... (أبقِ الأنواع السابقة كما هي وأضف التالي في النهاية) ...
 
 // --- الإضافات الجديدة ---
 
@@ -199,7 +180,6 @@ export interface StudentObservation {
   // AI Fields
   sentiment?: 'positive' | 'negative' | 'neutral';
 }
-// ... (Existing Types) ...
 
 export interface SchoolNews {
   id: string;
@@ -209,7 +189,6 @@ export interface SchoolNews {
   isUrgent: boolean;
   createdAt: string;
 }
-// ... (Existing types) ...
 
 // New Types for Appointments
 export interface AppointmentSlot {
@@ -235,4 +214,18 @@ export interface Appointment {
   createdAt: string;
 }
 
-// ... (Rest of types)
+// New Type for Student Exit Permission (Istithan)
+export interface ExitPermission {
+  id: string;
+  studentId: string;
+  studentName: string;
+  grade: string;
+  className: string;
+  parentName: string;
+  parentPhone: string;
+  reason?: string;
+  createdBy: string;
+  status: 'pending_pickup' | 'completed' | 'expired';
+  createdAt: string;
+  completedAt?: string;
+}

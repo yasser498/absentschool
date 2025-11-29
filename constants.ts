@@ -1,3 +1,4 @@
+
 import { Student } from "./types";
 
 export const ADMIN_PASSWORD = "1057275826";
@@ -21,6 +22,7 @@ export const PERMISSIONS = [
   { key: 'reports', label: 'التقارير والإحصائيات' },
   { key: 'observations', label: 'ملاحظات الطلاب' },
   { key: 'gate_security', label: 'أمن البوابة (المسح الضوئي)' },
+  { key: 'exit_perms', label: 'إدارة استئذان الطلاب' },
 ];
 
 // Data extracted from the Ministry of Education Behavior PDF

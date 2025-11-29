@@ -1,7 +1,8 @@
+
 import { supabase } from '../supabaseClient';
 import { 
   Appointment, AppointmentSlot, 
-  SchoolNews, Student, ExcuseRequest, RequestStatus, StaffUser, AttendanceRecord, AttendanceStatus, ClassAssignment, ResolvedAlert, BehaviorRecord, AdminInsight, Referral, StudentObservation, GuidanceSession, StudentPoint, ParentLink, AppNotification 
+  SchoolNews, Student, ExcuseRequest, RequestStatus, StaffUser, AttendanceRecord, AttendanceStatus, ClassAssignment, ResolvedAlert, BehaviorRecord, AdminInsight, Referral, StudentObservation, GuidanceSession, StudentPoint, ParentLink, AppNotification, ExitPermission 
 } from "../types";
 import { GoogleGenAI } from "@google/genai";
 
@@ -793,4 +794,68 @@ export const getBotContext = async () => {
         
     if (error || !data) return "";
     return data.content;
+};
+
+// --- EXIT PERMISSIONS SYSTEM (استئذان الطلاب) ---
+
+const mapExitFromDB = (e: any): ExitPermission => ({
+    id: e.id,
+    studentId: e.student_id,
+    studentName: e.student_name,
+    grade: e.grade,
+    className: e.class_name,
+    parentName: e.parent_name,
+    parentPhone: e.parent_phone,
+    reason: e.reason,
+    createdBy: e.created_by,
+    status: e.status,
+    createdAt: e.created_at,
+    completedAt: e.completed_at
+});
+
+export const addExitPermission = async (perm: Omit<ExitPermission, 'id' | 'status' | 'createdAt' | 'completedAt'>) => {
+    const { error } = await supabase.from('exit_permissions').insert({
+        student_id: perm.studentId,
+        student_name: perm.studentName,
+        grade: perm.grade,
+        class_name: perm.className,
+        parent_name: perm.parentName,
+        parent_phone: perm.parentPhone,
+        reason: perm.reason,
+        created_by: perm.createdBy,
+        status: 'pending_pickup'
+    });
+    if (error) throw new Error(error.message);
+};
+
+export const getExitPermissions = async (date?: string, status?: string) => {
+    let query = supabase.from('exit_permissions').select('*');
+    if (date) {
+        // Simple date filtering (starts with YYYY-MM-DD)
+        query = query.gte('created_at', `${date}T00:00:00`).lte('created_at', `${date}T23:59:59`);
+    }
+    if (status) query = query.eq('status', status);
+    
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) return [];
+    return data.map(mapExitFromDB);
+};
+
+export const getMyExitPermissions = async (studentIds: string[]) => {
+    if (studentIds.length === 0) return [];
+    const { data, error } = await supabase.from('exit_permissions')
+        .select('*')
+        .in('student_id', studentIds)
+        .order('created_at', { ascending: false });
+        
+    if (error) return [];
+    return data.map(mapExitFromDB);
+};
+
+export const completeExitPermission = async (id: string) => {
+    const { error } = await supabase.from('exit_permissions').update({
+        status: 'completed',
+        completed_at: new Date().toISOString()
+    }).eq('id', id);
+    if (error) throw new Error(error.message);
 };

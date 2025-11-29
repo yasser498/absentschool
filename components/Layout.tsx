@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine } from 'lucide-react';
+import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine, LogOut as ExitIcon } from 'lucide-react';
 import { StaffUser } from '../types';
 import { getPendingRequestsCountForStaff } from '../services/storage';
 import ChatBot from './ChatBot';
@@ -209,6 +209,9 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
                <SectionLabel label="المهام اليومية" />
                {hasPermission('gate_security') && (
                  <NavItem to="/staff/gate" icon={ScanLine} label="ماسح البوابة" activeColor="teal" />
+               )}
+               {hasPermission('exit_perms') && (
+                 <NavItem to="/staff/exit-permissions" icon={ExitIcon} label="استئذان الطلاب" activeColor="orange" />
                )}
                {hasPermission('attendance') && (
                  <NavItem to="/staff/attendance" icon={ClipboardCheck} label="رصد الغياب" activeColor="emerald" />

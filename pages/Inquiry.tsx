@@ -5,18 +5,18 @@ import {
   Search, User, School, Copy, Check, CalendarDays, AlertCircle, Loader2, 
   FileText, ShieldAlert, Star, MessageSquare, Send, CheckCircle, Clock, Plus, Users, Bell, 
   LogOut, ChevronRight, ArrowLeft, Activity, ChevronLeft, Archive, AlertTriangle, 
-  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer
+  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer, LogOut as ExitIcon
 } from 'lucide-react';
 import { 
   getStudentByCivilId, getRequestsByStudentId, getStudentAttendanceHistory, 
   getBehaviorRecords, getStudentObservations, acknowledgeBehavior, 
   acknowledgeObservation, getParentChildren, linkParentToStudent, 
   getNotifications, markNotificationRead, getStudentPoints, getSchoolNews, generateSmartStudentReport,
-  getAvailableSlots, bookAppointment, getMyAppointments
+  getAvailableSlots, bookAppointment, getMyAppointments, getMyExitPermissions
 } from '../services/storage';
 import { 
   Student, ExcuseRequest, RequestStatus, AttendanceStatus, BehaviorRecord, 
-  StudentObservation, AppNotification, StudentPoint, SchoolNews, AppointmentSlot, Appointment 
+  StudentObservation, AppNotification, StudentPoint, SchoolNews, AppointmentSlot, Appointment, ExitPermission 
 } from '../types';
 
 const { useNavigate } = ReactRouterDOM as any;
@@ -37,7 +37,7 @@ const Inquiry: React.FC = () => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   
   // Tabs
-  const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'attendance' | 'archive' | 'behavior' | 'observations' | 'visits'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'attendance' | 'archive' | 'behavior' | 'observations' | 'visits' | 'exits'>('overview');
   
   // Data State
   const [history, setHistory] = useState<ExcuseRequest[]>([]);
@@ -45,6 +45,7 @@ const Inquiry: React.FC = () => {
   const [behaviorHistory, setBehaviorHistory] = useState<BehaviorRecord[]>([]);
   const [observations, setObservations] = useState<StudentObservation[]>([]);
   const [points, setPoints] = useState<{total: number, history: StudentPoint[]}>({ total: 0, history: [] });
+  const [exitPermissions, setExitPermissions] = useState<ExitPermission[]>([]); // New
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [newChildId, setNewChildId] = useState('');
@@ -113,14 +114,15 @@ const Inquiry: React.FC = () => {
       setSelectedStudent(student);
       setLoading(true);
       try {
-          const [reqs, att, beh, obs, pts, slots, apps] = await Promise.all([
+          const [reqs, att, beh, obs, pts, slots, apps, exits] = await Promise.all([
               getRequestsByStudentId(student.studentId),
               getStudentAttendanceHistory(student.studentId, student.grade, student.className),
               getBehaviorRecords(student.studentId),
               getStudentObservations(student.studentId),
               getStudentPoints(student.studentId),
               getAvailableSlots(),
-              getMyAppointments(parentCivilId)
+              getMyAppointments(parentCivilId),
+              getMyExitPermissions([student.studentId]) // New
           ]);
           setHistory(reqs);
           setAttendanceHistory(att);
@@ -129,6 +131,7 @@ const Inquiry: React.FC = () => {
           setPoints(pts);
           setAvailableSlots(slots);
           setMyAppointments(apps.filter(a => a.studentId === student.studentId));
+          setExitPermissions(exits);
           setActiveTab('overview');
       } catch (e) { console.error(e); } finally { setLoading(false); }
   };
@@ -224,7 +227,7 @@ const Inquiry: React.FC = () => {
 
                     {/* Tabs */}
                     <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                        {[{ id: 'overview', label: 'ملخص', icon: Activity }, { id: 'visits', label: 'حجز موعد', icon: CalendarCheck }, { id: 'report', label: 'التقرير الذكي', icon: Sparkles }, { id: 'attendance', label: 'التقويم', icon: CalendarDays }, { id: 'archive', label: 'أرشيف الأعذار', icon: Archive }, { id: 'behavior', label: 'السلوك', icon: ShieldAlert }, { id: 'observations', label: 'الملاحظات', icon: MessageSquare }].map(tab => (
+                        {[{ id: 'overview', label: 'ملخص', icon: Activity }, { id: 'exits', label: 'إذن خروج', icon: ExitIcon }, { id: 'visits', label: 'حجز موعد', icon: CalendarCheck }, { id: 'report', label: 'التقرير الذكي', icon: Sparkles }, { id: 'attendance', label: 'التقويم', icon: CalendarDays }, { id: 'archive', label: 'أرشيف الأعذار', icon: Archive }, { id: 'behavior', label: 'السلوك', icon: ShieldAlert }, { id: 'observations', label: 'الملاحظات', icon: MessageSquare }].map(tab => (
                             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap border ${activeTab === tab.id ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}><tab.icon size={16}/> {tab.label}</button>
                         ))}
                     </div>
@@ -239,7 +242,59 @@ const Inquiry: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* ARCHIVE - FIXED */}
+                            {/* EXIT PERMISSIONS */}
+                            {activeTab === 'exits' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="bg-orange-50 border border-orange-200 p-6 rounded-3xl relative overflow-hidden">
+                                        <div className="relative z-10">
+                                            <h3 className="text-lg font-bold text-orange-900 mb-4 flex items-center gap-2"><ExitIcon /> بطاقة الخروج الرقمية</h3>
+                                            
+                                            {/* Show active exit if exists */}
+                                            {(() => {
+                                                const activeExit = exitPermissions.find(p => p.status === 'pending_pickup' && (new Date().getTime() - new Date(p.createdAt).getTime()) < 3600000); // 1 hour valid
+                                                if (activeExit) {
+                                                    return (
+                                                        <div className="bg-white p-6 rounded-2xl shadow-lg border border-orange-100 text-center">
+                                                            <div className="bg-slate-50 inline-block p-4 rounded-xl border border-slate-200 mb-4">
+                                                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=EXIT:${activeExit.id}`} alt="Exit QR" className="w-48 h-48 mix-blend-multiply"/>
+                                                            </div>
+                                                            <p className="text-sm text-slate-500 font-bold mb-2">يرجى إبراز الباركود لرجل الأمن عند البوابة</p>
+                                                            <div className="bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold inline-block animate-pulse">
+                                                                إذن خروج نشط
+                                                            </div>
+                                                            <p className="text-xs text-slate-400 mt-2">صلاحية الرمز: ساعة واحدة</p>
+                                                        </div>
+                                                    );
+                                                }
+                                                return <p className="text-slate-500 text-sm">لا يوجد طلب استئذان نشط حالياً.</p>;
+                                            })()}
+                                        </div>
+                                    </div>
+
+                                    {/* History */}
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                        <h3 className="font-bold text-slate-800 mb-4">سجل الاستئذان السابق</h3>
+                                        {exitPermissions.length === 0 ? <p className="text-slate-400 text-sm">السجل فارغ.</p> : (
+                                            <div className="space-y-3">
+                                                {exitPermissions.map(p => (
+                                                    <div key={p.id} className="flex justify-between items-center p-3 border-b border-slate-50 last:border-0">
+                                                        <div>
+                                                            <p className="font-bold text-slate-800 text-sm">{p.reason || 'بدون سبب'}</p>
+                                                            <p className="text-xs text-slate-500">{new Date(p.createdAt).toLocaleDateString('ar-SA')}</p>
+                                                        </div>
+                                                        <span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                            {p.status === 'completed' ? 'تم الخروج' : 'منتهي/انتظار'}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ... (Existing Tabs: Attendance, Archive, Behavior, etc.) ... */}
+                            {/* Copy existing tab contents here (shortened for brevity as logic didn't change) */}
                             {activeTab === 'archive' && (
                                 <div className="space-y-4 animate-fade-in">
                                     {history.length === 0 ? (
@@ -293,7 +348,6 @@ const Inquiry: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* ATTENDANCE CALENDAR - FIXED */}
                             {activeTab === 'attendance' && (
                                 <div className="space-y-6 animate-fade-in">
                                     <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -334,7 +388,6 @@ const Inquiry: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* SMART REPORT - FIXED */}
                             {activeTab === 'report' && (
                                 <div className="space-y-6 animate-fade-in">
                                     <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl p-8 text-white relative overflow-hidden shadow-lg">
@@ -369,7 +422,6 @@ const Inquiry: React.FC = () => {
                                 </div>
                             )}
                             
-                            {/* Visits */}
                             {activeTab === 'visits' && (
                                 <div className="space-y-6 animate-fade-in">
                                     {myAppointments.filter(a => a.status === 'pending').length > 0 && (

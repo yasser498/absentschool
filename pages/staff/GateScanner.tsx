@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { QrCode, CheckCircle, AlertCircle, Loader2, User, Clock, RefreshCw, XCircle, Printer, List, ShieldCheck, FileText, LayoutGrid, Sparkles, BrainCircuit, Calendar, ArrowRight, Bell, LogOut, Home, X, Camera } from 'lucide-react';
+import { QrCode, CheckCircle, AlertCircle, Loader2, User, Clock, RefreshCw, XCircle, Printer, List, ShieldCheck, FileText, LayoutGrid, Sparkles, BrainCircuit, Calendar, ArrowRight, Bell, LogOut, Home, X, Camera, History } from 'lucide-react';
 import { checkInVisitor, getDailyAppointments, generateSmartContent } from '../../services/storage';
 import { Appointment } from '../../types';
 
@@ -17,6 +17,7 @@ const GateScanner: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkInSuccess, setCheckInSuccess] = useState(false);
+  const [isAlreadyCheckedIn, setIsAlreadyCheckedIn] = useState(false); // New State
   const [todaysVisits, setTodaysVisits] = useState<Appointment[]>([]);
   
   // AI State
@@ -101,7 +102,8 @@ const GateScanner: React.FC = () => {
   const handleScanProcess = async (appointmentId: string) => {
       setLoading(true);
       setError(null);
-      setCheckInSuccess(false); // Reset previous success
+      setCheckInSuccess(false); 
+      setIsAlreadyCheckedIn(false);
       
       try {
           const today = new Date().toISOString().split('T')[0];
@@ -114,8 +116,7 @@ const GateScanner: React.FC = () => {
           if (found) {
               setScannedAppointment(found);
               if (found.status === 'completed') {
-                  setCheckInSuccess(true); 
-                  setError("هذا الزائر قام بتسجيل الدخول مسبقاً.");
+                  setIsAlreadyCheckedIn(true);
               } else {
                   setCheckInSuccess(false);
               }
@@ -152,6 +153,7 @@ const GateScanner: React.FC = () => {
       setScannedAppointment(null);
       setError(null);
       setCheckInSuccess(false);
+      setIsAlreadyCheckedIn(false);
       isProcessing.current = false; // Unlock for next scan
   };
 
@@ -325,6 +327,8 @@ const GateScanner: React.FC = () => {
                     <div className="absolute inset-0 z-20 bg-slate-900/95 flex flex-col items-center justify-center p-8 animate-fade-in text-center">
                         {loading ? (
                             <Loader2 size={48} className="text-teal-500 animate-spin mb-4"/>
+                        ) : isAlreadyCheckedIn ? (
+                             <History size={64} className="text-amber-500 mb-4 animate-pulse"/>
                         ) : checkInSuccess ? (
                             <CheckCircle size={64} className="text-emerald-500 mb-4"/>
                         ) : error ? (
@@ -334,15 +338,19 @@ const GateScanner: React.FC = () => {
                         )}
 
                         <h3 className="text-2xl font-bold text-white mb-2">
-                            {checkInSuccess ? 'تم تسجيل الدخول' : error ? 'تنبيه' : 'تأكيد البيانات'}
+                            {isAlreadyCheckedIn ? 'تم تسجيل الدخول مسبقاً' : checkInSuccess ? 'تم تسجيل الدخول' : error ? 'تنبيه' : 'تأكيد البيانات'}
                         </h3>
                         
-                        <p className={`text-sm mb-6 ${checkInSuccess ? 'text-emerald-400' : error ? 'text-red-400' : 'text-slate-400'}`}>
-                            {checkInSuccess ? `وقت الدخول: ${new Date().toLocaleTimeString('ar-SA')}` : error ? error : 'يرجى مراجعة بيانات الزائر أدناه'}
+                        <p className={`text-sm mb-6 ${isAlreadyCheckedIn ? 'text-amber-400 font-bold' : checkInSuccess ? 'text-emerald-400' : error ? 'text-red-400' : 'text-slate-400'}`}>
+                            {isAlreadyCheckedIn 
+                                ? `تم الدخول في: ${new Date(scannedAppointment?.arrivedAt!).toLocaleTimeString('ar-SA')} | ${new Date(scannedAppointment?.arrivedAt!).toLocaleDateString('ar-SA')}`
+                                : checkInSuccess 
+                                    ? `وقت الدخول: ${new Date().toLocaleTimeString('ar-SA')}` 
+                                    : error ? error : 'يرجى مراجعة بيانات الزائر أدناه'}
                         </p>
 
                         {scannedAppointment && (
-                            <div className="bg-white/10 rounded-xl p-4 w-full text-sm text-left mb-6 border border-white/10">
+                            <div className={`rounded-xl p-4 w-full text-sm text-left mb-6 border ${isAlreadyCheckedIn ? 'bg-amber-900/30 border-amber-500/50' : 'bg-white/10 border-white/10'}`}>
                                 <div className="flex justify-between border-b border-white/10 pb-2 mb-2">
                                     <span className="text-slate-400">الزائر</span>
                                     <span className="text-white font-bold">{scannedAppointment.parentName}</span>
@@ -359,7 +367,7 @@ const GateScanner: React.FC = () => {
                         )}
 
                         <div className="flex gap-3 w-full">
-                            {!checkInSuccess && !error && (
+                            {!checkInSuccess && !error && !isAlreadyCheckedIn && (
                                 <button onClick={confirmCheckIn} className="flex-1 bg-teal-500 hover:bg-teal-600 text-white py-3 rounded-xl font-bold transition-colors">
                                     تأكيد الدخول
                                 </button>

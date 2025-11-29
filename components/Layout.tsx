@@ -1,8 +1,10 @@
+
 import React, { useEffect, useState } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine } from 'lucide-react';
 import { StaffUser } from '../types';
 import { getPendingRequestsCountForStaff } from '../services/storage';
+import ChatBot from './ChatBot';
 
 const { Link, useLocation } = ReactRouterDOM as any;
 
@@ -268,6 +270,9 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
           {children}
         </div>
       </main>
+
+      {/* Chat Bot Widget */}
+      <ChatBot />
 
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (

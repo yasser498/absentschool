@@ -1,12 +1,15 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardCheck, MessageSquare, BookUser, BarChart2, ShieldCheck, LogOut, Briefcase, FileText } from 'lucide-react';
-import { StaffUser } from '../../types';
+import { ClipboardCheck, MessageSquare, BookUser, BarChart2, ShieldCheck, LogOut, Briefcase, FileText, BellRing, Sparkles } from 'lucide-react';
+import { StaffUser, SchoolNews, AdminInsight } from '../../types';
+import { getSchoolNews, getAdminInsights } from '../../services/storage';
 
 const StaffHome: React.FC = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<StaffUser | null>(null);
+  const [news, setNews] = useState<SchoolNews[]>([]);
+  const [directives, setDirectives] = useState<AdminInsight[]>([]);
 
   useEffect(() => {
     const session = localStorage.getItem('ozr_staff_session');
@@ -31,6 +34,18 @@ const StaffHome: React.FC = () => {
        else if (perms.includes('observations')) navigate('/staff/observations', { replace: true });
     }
     // Otherwise, stay here and show the menu
+    
+    // Load News and Directives
+    const loadInfo = async () => {
+        const [n, d] = await Promise.all([
+            getSchoolNews(),
+            getAdminInsights('teachers')
+        ]);
+        setNews(n);
+        setDirectives(d);
+    };
+    loadInfo();
+
   }, [navigate]);
 
   if (!user) return null;
@@ -141,7 +156,52 @@ const StaffHome: React.FC = () => {
         )}
       </div>
       
-      <div className="text-center pt-8">
+      {/* COMMUNICATION CENTER (NEWS & DIRECTIVES) */}
+      {(news.length > 0 || directives.length > 0) && (
+          <div className="mt-8 space-y-6">
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><BellRing className="text-amber-500"/> لوحة الإعلانات والتعاميم</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* News Feed */}
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <h3 className="font-bold text-slate-700 mb-4 border-b border-slate-100 pb-2">أخبار المدرسة</h3>
+                      {news.length === 0 ? <p className="text-sm text-slate-400">لا يوجد أخبار جديدة.</p> : (
+                          <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar">
+                              {news.map(n => (
+                                  <div key={n.id} className={`p-4 rounded-xl border-l-4 ${n.isUrgent ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}`}>
+                                      <div className="flex justify-between items-start mb-1">
+                                          <h4 className="font-bold text-slate-900 text-sm">{n.title}</h4>
+                                          {n.isUrgent && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold">هام</span>}
+                                      </div>
+                                      <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{n.content}</p>
+                                      <span className="text-[10px] text-slate-400 mt-2 block">{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+
+                  {/* Admin Directives */}
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                      <h3 className="font-bold text-slate-700 mb-4 border-b border-slate-100 pb-2">التعاميم الإدارية</h3>
+                      {directives.length === 0 ? <p className="text-sm text-slate-400">لا يوجد تعاميم موجهة للمعلمين.</p> : (
+                          <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar">
+                              {directives.map(d => (
+                                  <div key={d.id} className="p-4 rounded-xl bg-purple-50 border border-purple-100">
+                                      <div className="flex items-center gap-2 mb-2 text-purple-700 font-bold text-sm">
+                                          <Sparkles size={14}/> توجيه إداري
+                                      </div>
+                                      <p className="text-xs text-slate-700 leading-relaxed font-medium">{d.content}</p>
+                                      <span className="text-[10px] text-purple-400 mt-2 block text-left">{new Date(d.createdAt).toLocaleDateString('ar-SA')}</span>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      <div className="text-center pt-8 border-t border-slate-100 mt-8">
          <button 
            onClick={() => { localStorage.removeItem('ozr_staff_session'); window.location.href = '#/'; }}
            className="text-slate-400 hover:text-red-500 text-sm font-bold flex items-center justify-center gap-2 mx-auto transition-colors"

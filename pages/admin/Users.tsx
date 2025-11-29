@@ -55,7 +55,7 @@ const Users: React.FC = () => {
       setLoadingClasses(true);
       try {
         const classes = await getAvailableClassesForGrade(selectedGrade);
-        setAvailableClasses(classes);
+        setAvailableClasses(classes as string[]);
       } catch (e) {
         console.error("Failed to load classes", e);
       } finally {

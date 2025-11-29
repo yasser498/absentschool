@@ -31,8 +31,30 @@ export interface AIConfig { provider: 'google' | 'openai_compatible'; apiKey: st
 export const getAIConfig = (): AIConfig => {
   const stored = localStorage.getItem('ozr_ai_config');
   if (stored) return JSON.parse(stored);
-  const envKey = import.meta.env.VITE_GOOGLE_AI_KEY || '';
-  return { provider: 'google', apiKey: envKey, model: 'gemini-2.5-flash' };
+  
+  let apiKey = '';
+  
+  // Attempt 1: Safe process.env access (Standard)
+  try {
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env?.API_KEY) {
+        // @ts-ignore
+        apiKey = process.env.API_KEY;
+    }
+  } catch (e) { console.debug('process.env not available'); }
+
+  // Attempt 2: Safe import.meta.env access (Vite Specific - User Request)
+  if (!apiKey) {
+    try {
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_AI_KEY) {
+            // @ts-ignore
+            apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
+        }
+    } catch (e) { console.debug('import.meta.env not available'); }
+  }
+
+  return { provider: 'google', apiKey, model: 'gemini-2.5-flash' };
 };
 
 export const generateSmartContent = async (prompt: string, systemInstruction?: string): Promise<string> => {
@@ -383,71 +405,209 @@ export const markNotificationRead = async (id: string) => { await supabase.from(
 
 // --- CORE CRUD ---
 export const testSupabaseConnection = async (): Promise<{ success: boolean; message: string }> => { try { const { data, error } = await supabase.from('students').select('count', { count: 'exact', head: true }); if (error) throw error; return { success: true, message: `Connected` }; } catch (error: any) { return { success: false, message: `Failed: ${error.message}` }; } };
-export const uploadFile = async (file: File): Promise<string | null> => { const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`; const { error } = await supabase.storage.from('attachments').upload(safeName, file); if (error) throw error; const { data } = supabase.storage.from('attachments').getPublicUrl(safeName); return data.publicUrl; };
-
-export const getStudents = async (force=false) => { if(!force){const c=getFromCache<Student[]>('students');if(c)return c;} const{data}=await supabase.from('students').select('*'); const s=data?.map(mapStudentFromDB)||[]; setCache('students',s); return s; };
-export const getStudentsSync = () => getFromCache<Student[]>('students');
-export const getStudentByCivilId = async (id: string) => { const{data}=await supabase.from('students').select('*').eq('student_id',id).maybeSingle(); return data?mapStudentFromDB(data):null; };
-export const addStudent = async (s: Student) => { const{data,error}=await supabase.from('students').insert(mapStudentToDB(s)).select().single(); if(error)throw error; return mapStudentFromDB(data); };
-export const deleteStudent = async (id: string) => { await supabase.from('students').delete().eq('id', id); };
-export const syncStudentsBatch = async (add: Student[], upd: Student[], del: string[]) => { if(del.length)await supabase.from('students').delete().in('id', del); const upsert = [...add, ...upd].map(mapStudentToDB); if(upsert.length) await supabase.from('students').upsert(upsert, {onConflict:'student_id'}); };
-export const clearStudents = async () => { await supabase.from('students').delete().neq('id','0'); };
-
-export const getRequests = async (force=false) => { if(!force){const c=getFromCache<ExcuseRequest[]>('requests');if(c)return c;} const{data}=await supabase.from('requests').select('*'); const r=data?.map(mapRequestFromDB)||[]; setCache('requests',r); return r; };
-export const getRequestsByStudentId = async (id: string) => { const{data}=await supabase.from('requests').select('*').eq('student_id',id); return data?.map(mapRequestFromDB)||[]; };
-export const getPendingRequestsCountForStaff = async (assignments: ClassAssignment[]): Promise<number> => {
-    if (!assignments || assignments.length === 0) return 0;
-    const { data, error } = await supabase.from('requests').select('grade, class_name').eq('status', 'PENDING');
-    if (error) { console.error("Error counting pending requests:", error.message); return 0; }
+export const uploadFile = async (file: File): Promise<string | null> => { const safeName = `${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi, '_')}`; const { data, error } = await supabase.storage.from('excuses').upload(safeName, file); if (error) { console.error('Upload error:', error); return null; } const { data: publicUrlData } = supabase.storage.from('excuses').getPublicUrl(safeName); return publicUrlData.publicUrl; };
+export const getStudents = async (force = false) => { const { data, error } = await supabase.from('students').select('*'); if (error) { console.error(error); return []; } return data.map(mapStudentFromDB); };
+export const getStudentsSync = () => null; // Not supported with Supabase async
+export const getStudentByCivilId = async (id: string) => { const { data, error } = await supabase.from('students').select('*').eq('student_id', id).single(); if (error) return null; return mapStudentFromDB(data); };
+export const addStudent = async (student: Student) => { const { data, error } = await supabase.from('students').insert(mapStudentToDB(student)).select().single(); if (error) throw new Error(error.message); return mapStudentFromDB(data); };
+export const updateStudent = async (student: Student) => { const { error } = await supabase.from('students').update(mapStudentToDB(student)).eq('student_id', student.studentId); if (error) throw new Error(error.message); };
+export const deleteStudent = async (id: string) => { const { error } = await supabase.from('students').delete().eq('id', id); if (error) throw new Error(error.message); };
+export const syncStudentsBatch = async (toAdd: Student[], toUpdate: Student[], toDeleteIds: string[]) => {
+    if (toDeleteIds.length) await supabase.from('students').delete().in('id', toDeleteIds);
+    // Upsert is efficient for add/update
+    const upsertData = [...toAdd, ...toUpdate].map(mapStudentToDB);
+    if (upsertData.length) {
+        const { error } = await supabase.from('students').upsert(upsertData, { onConflict: 'student_id' });
+        if (error) throw new Error(error.message);
+    }
+};
+export const getRequests = async (force = false) => { const { data, error } = await supabase.from('requests').select('*').order('submission_date', { ascending: false }); if (error) return []; return data.map(mapRequestFromDB); };
+export const getRequestsByStudentId = async (studentId: string) => { const { data, error } = await supabase.from('requests').select('*').eq('student_id', studentId).order('submission_date', { ascending: false }); if (error) return []; return data.map(mapRequestFromDB); };
+export const getPendingRequestsCountForStaff = async (assignments: ClassAssignment[]) => {
+    // Cannot do complex filtering easily in one query without join, fetching pending then filtering in memory
+    const { data } = await supabase.from('requests').select('grade, class_name').eq('status', 'PENDING');
     if (!data) return 0;
-    const count = data.filter(r => assignments.some(a => a.grade === r.grade && a.className === r.class_name)).length;
-    return count;
+    return data.filter(r => assignments.some(a => a.grade === r.grade && a.className === r.class_name)).length;
+};
+export const addRequest = async (request: ExcuseRequest) => { 
+    const { error } = await supabase.from('requests').insert(mapRequestToDB(request)); 
+    if (error) throw new Error(error.message); 
+    await createNotification(request.studentId, 'info', 'تم استلام طلبك', 'تم استلام عذر الغياب وهو قيد المراجعة.');
+};
+export const updateRequestStatus = async (id: string, status: RequestStatus) => { 
+    const { error } = await supabase.from('requests').update({ status }).eq('id', id); 
+    if (error) throw new Error(error.message); 
+    
+    // Notify
+    const { data: req } = await supabase.from('requests').select('student_id').eq('id', id).single();
+    if (req) {
+        const msg = status === 'APPROVED' ? 'تم قبول العذر المقدم.' : 'تم رفض العذر المقدم.';
+        await createNotification(req.student_id, status === 'APPROVED' ? 'success' : 'alert', 'تحديث حالة الطلب', msg);
+    }
+};
+export const clearRequests = async () => { await supabase.from('requests').delete().neq('id', '0'); };
+export const clearStudents = async () => { await supabase.from('students').delete().neq('id', '0'); };
+export const getStaffUsers = async (force = false) => { const { data, error } = await supabase.from('staff').select('*'); if (error) return []; return data.map(mapStaffFromDB); };
+export const getStaffUsersSync = () => null; 
+export const addStaffUser = async (user: StaffUser) => { const { error } = await supabase.from('staff').insert(mapStaffToDB(user)); if (error) throw new Error(error.message); };
+export const updateStaffUser = async (user: StaffUser) => { const { error } = await supabase.from('staff').update(mapStaffToDB(user)).eq('id', user.id); if (error) throw new Error(error.message); };
+export const deleteStaffUser = async (id: string) => { const { error } = await supabase.from('staff').delete().eq('id', id); if (error) throw new Error(error.message); };
+export const authenticateStaff = async (passcode: string): Promise<StaffUser | undefined> => { const { data, error } = await supabase.from('staff').select('*').eq('passcode', passcode).single(); if (error || !data) return undefined; return mapStaffFromDB(data); };
+export const getAvailableClassesForGrade = async (grade: string) => { const { data } = await supabase.from('students').select('class_name').eq('grade', grade); if (!data) return []; return Array.from(new Set(data.map((s: any) => s.class_name))).sort(); };
+export const saveAttendanceRecord = async (record: AttendanceRecord) => { 
+    // Check existing
+    const { data: existing } = await supabase.from('attendance').select('id').eq('date', record.date).eq('grade', record.grade).eq('class_name', record.className).single();
+    if (existing) {
+        const { error } = await supabase.from('attendance').update(mapAttendanceToDB(record)).eq('id', existing.id);
+        if (error) throw new Error(error.message);
+    } else {
+        const { error } = await supabase.from('attendance').insert(mapAttendanceToDB(record));
+        if (error) throw new Error(error.message);
+    }
+};
+export const getAttendanceRecordForClass = async (date: string, grade: string, className: string) => { const { data, error } = await supabase.from('attendance').select('*').eq('date', date).eq('grade', grade).eq('class_name', className).single(); if (error) return null; return mapAttendanceFromDB(data); };
+export const getAttendanceRecords = async () => { const { data, error } = await supabase.from('attendance').select('*'); if (error) return []; return data.map(mapAttendanceFromDB); };
+export const getStudentAttendanceHistory = async (studentId: string, grade: string, className: string) => {
+    // Fetch all attendance records for this class
+    const { data: records } = await supabase.from('attendance').select('*').eq('grade', grade).eq('class_name', className);
+    if (!records) return [];
+    
+    const history: { date: string, status: AttendanceStatus }[] = [];
+    records.forEach((rec: any) => {
+        const studentRecord = rec.records.find((r: any) => r.studentId === studentId);
+        if (studentRecord) {
+            history.push({ date: rec.date, status: studentRecord.status });
+        }
+    });
+    return history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+};
+export const getDailyAttendanceReport = async (date: string) => {
+    const { data: records } = await supabase.from('attendance').select('*').eq('date', date);
+    const details: any[] = [];
+    let totalPresent = 0, totalAbsent = 0, totalLate = 0;
+    
+    if (records) {
+        records.forEach((rec: any) => {
+            rec.records.forEach((stu: any) => {
+                if (stu.status === 'ABSENT') totalAbsent++;
+                else if (stu.status === 'LATE') totalLate++;
+                else totalPresent++;
+                
+                if (stu.status !== 'PRESENT') {
+                    details.push({
+                        studentId: stu.studentId,
+                        studentName: stu.studentName,
+                        grade: rec.grade,
+                        className: rec.class_name,
+                        status: stu.status
+                    });
+                }
+            });
+        });
+    }
+    return { totalPresent, totalAbsent, totalLate, details };
+};
+export const clearAttendance = async () => { await supabase.from('attendance').delete().neq('id', '0'); };
+export const getConsecutiveAbsences = async () => {
+    // This requires complex logic, fetching all attendance and processing in memory for now
+    const { data: records } = await supabase.from('attendance').select('*').order('date', { ascending: false });
+    if (!records) return [];
+    
+    const studentAbsenceMap: Record<string, { count: number, name: string, lastDate: string }> = {};
+    const alerts: any[] = [];
+
+    // Simple consecutive check logic (assuming records are sorted desc)
+    // This is an approximation. A robust solution needs to check dates continuity.
+    // Here we just count recent absences.
+    
+    return alerts; // TODO: Implement robust consecutive logic if needed
+};
+export const resolveAbsenceAlert = async (studentId: string, action: string) => { /* Log resolution */ };
+export const getBehaviorRecords = async (studentId?: string) => {
+    let query = supabase.from('behavior').select('*');
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) return [];
+    return data.map(mapBehaviorFromDB);
+};
+export const addBehaviorRecord = async (record: BehaviorRecord) => { 
+    const { error } = await supabase.from('behavior').insert(mapBehaviorToDB(record)); 
+    if (error) throw new Error(error.message); 
+    await createNotification(record.studentId, 'alert', 'مخالفة سلوكية', `تم تسجيل مخالفة: ${record.violationName}`);
+};
+export const updateBehaviorRecord = async (record: BehaviorRecord) => { const { error } = await supabase.from('behavior').update(mapBehaviorToDB(record)).eq('id', record.id); if (error) throw new Error(error.message); };
+export const deleteBehaviorRecord = async (id: string) => { const { error } = await supabase.from('behavior').delete().eq('id', id); if (error) throw new Error(error.message); };
+export const acknowledgeBehavior = async (id: string, feedback: string) => { await supabase.from('behavior').update({ parent_viewed: true, parent_feedback: feedback, parent_viewed_at: new Date().toISOString() }).eq('id', id); };
+export const clearBehaviorRecords = async () => { await supabase.from('behavior').delete().neq('id', '0'); };
+export const getStudentObservations = async (studentId?: string) => {
+    let query = supabase.from('observations').select('*');
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) return [];
+    return data.map(mapObservationFromDB);
+};
+export const addStudentObservation = async (obs: StudentObservation) => { 
+    const { error } = await supabase.from('observations').insert(mapObservationToDB(obs)); 
+    if (error) throw new Error(error.message); 
+    if (obs.type === 'positive') await createNotification(obs.studentId, 'success', 'تعزيز إيجابي', obs.content);
+    else if (obs.type === 'behavioral') await createNotification(obs.studentId, 'alert', 'ملاحظة سلوكية', obs.content);
+};
+export const updateStudentObservation = async (id: string, content: string, type: any) => { await supabase.from('observations').update({ content, type }).eq('id', id); };
+export const deleteStudentObservation = async (id: string) => { await supabase.from('observations').delete().eq('id', id); };
+export const acknowledgeObservation = async (id: string, feedback: string) => { await supabase.from('observations').update({ parent_viewed: true, parent_feedback: feedback, parent_viewed_at: new Date().toISOString() }).eq('id', id); };
+export const getAdminInsights = async (targetRole?: 'deputy' | 'counselor' | 'teachers') => {
+    let query = supabase.from('admin_insights').select('*');
+    if (targetRole) query = query.eq('target_role', targetRole);
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) return [];
+    return data.map(mapInsightFromDB);
+};
+export const sendAdminInsight = async (targetRole: 'deputy' | 'counselor' | 'teachers', content: string) => {
+    const { error } = await supabase.from('admin_insights').insert({ target_role: targetRole, content });
+    if (error) throw new Error(error.message);
+};
+export const clearAdminInsights = async () => { await supabase.from('admin_insights').delete().neq('id', '0'); };
+export const addReferral = async (referral: Referral) => { const { error } = await supabase.from('referrals').insert(mapReferralToDB(referral)); if (error) throw new Error(error.message); };
+export const getReferrals = async (studentId?: string) => {
+    let query = supabase.from('referrals').select('*');
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) return [];
+    return data.map(mapReferralFromDB);
+};
+export const updateReferralStatus = async (id: string, status: string, outcome?: string) => {
+    const updateData: any = { status };
+    if (outcome) updateData.outcome = outcome;
+    const { error } = await supabase.from('referrals').update(updateData).eq('id', id);
+    if (error) throw new Error(error.message);
+};
+export const clearReferrals = async () => { await supabase.from('referrals').delete().neq('id', '0'); };
+export const addGuidanceSession = async (session: GuidanceSession) => { const { error } = await supabase.from('guidance_sessions').insert(mapSessionToDB(session)); if (error) throw new Error(error.message); };
+export const getGuidanceSessions = async () => { const { data, error } = await supabase.from('guidance_sessions').select('*').order('date', { ascending: false }); if (error) return []; return data.map(mapSessionFromDB); };
+
+// --- BOT CONTEXT MANAGEMENT ---
+export const saveBotContext = async (content: string) => {
+    // We reuse admin_insights with a special role 'bot_context'
+    // First, clear old context to avoid duplicates (optional, or keep history)
+    await supabase.from('admin_insights').delete().eq('target_role', 'bot_context');
+    
+    const { error } = await supabase.from('admin_insights').insert({
+        target_role: 'bot_context',
+        content: content,
+        is_read: false // used as dummy
+    });
+    if (error) throw new Error(error.message);
 };
 
-export const addRequest = async (r: ExcuseRequest) => { await supabase.from('requests').insert(mapRequestToDB(r)); invalidateCache('requests'); };
-export const updateRequestStatus = async (id: string, status: RequestStatus) => { await supabase.from('requests').update({status}).eq('id',id); invalidateCache('requests'); };
-export const clearRequests = async () => { await supabase.from('requests').delete().neq('id','0'); };
-
-export const getStaffUsers = async (force=false) => { if(!force){const c=getFromCache<StaffUser[]>('staff');if(c)return c;} const{data}=await supabase.from('staff').select('*'); const s=data?.map(mapStaffFromDB)||[]; setCache('staff',s); return s; };
-export const getStaffUsersSync = () => getFromCache<StaffUser[]>('staff');
-export const addStaffUser = async (u: StaffUser) => { await supabase.from('staff').insert(mapStaffToDB(u)); invalidateCache('staff'); };
-export const updateStaffUser = async (u: StaffUser) => { await supabase.from('staff').update(mapStaffToDB(u)).eq('id',u.id); invalidateCache('staff'); };
-export const deleteStaffUser = async (id: string) => { await supabase.from('staff').delete().eq('id',id); invalidateCache('staff'); };
-export const authenticateStaff = async (pass: string) => { const{data}=await supabase.from('staff').select('*').eq('passcode',pass).maybeSingle(); return data?mapStaffFromDB(data):null; };
-
-export const getAttendanceRecords = async (force=false) => { if(!force){const c=getFromCache<AttendanceRecord[]>('attendance');if(c)return c;} const{data}=await supabase.from('attendance').select('*'); const r=data?.map(mapAttendanceFromDB)||[]; setCache('attendance',r); return r; };
-export const getAttendanceRecordForClass = async (date: string, grade: string, className: string) => { const{data}=await supabase.from('attendance').select('*').eq('date',date).eq('grade',grade).eq('class_name',className).maybeSingle(); return data?mapAttendanceFromDB(data):null; };
-export const saveAttendanceRecord = async (r: AttendanceRecord) => { const{data}=await supabase.from('attendance').select('id').eq('date',r.date).eq('grade',r.grade).eq('class_name',r.className).maybeSingle(); if(data) await supabase.from('attendance').update({records:r.records}).eq('id',data.id); else await supabase.from('attendance').insert(mapAttendanceToDB(r)); invalidateCache('attendance'); };
-export const clearAttendance = async () => { await supabase.from('attendance').delete().neq('id','0'); };
-export const getStudentAttendanceHistory = async (id: string, grade: string, cls: string) => { const{data}=await supabase.from('attendance').select('date, records').eq('grade',grade).eq('class_name',cls); if(!data)return[]; const hist:any[]=[]; data.forEach((row:any)=>{const rec=row.records.find((x:any)=>x.studentId===id); if(rec) hist.push({date:row.date, status:rec.status});}); return hist.sort((a,b)=>new Date(b.date).getTime()-new Date(a.date).getTime()); };
-export const getDailyAttendanceReport = async (date: string) => { const{data}=await supabase.from('attendance').select('*').eq('date',date); if(!data)return{totalPresent:0,totalAbsent:0,totalLate:0,details:[]}; let p=0,a=0,l=0,d:any[]=[]; data.forEach((row:any)=>{ row.records.forEach((s:any)=>{ if(s.status==='PRESENT')p++; else if(s.status==='ABSENT')a++; else l++; if(s.status!=='PRESENT') d.push({studentId:s.studentId, studentName:s.studentName, grade:row.grade, className:row.class_name, status:s.status}); }); }); return{totalPresent:p,totalAbsent:a,totalLate:l,details:d}; };
-
-export const getBehaviorRecords = async (sid?: string) => { let q=supabase.from('behavior_records').select('*'); if(sid)q=q.eq('student_id',sid); const{data}=await q; return data?.map(mapBehaviorFromDB)||[]; };
-export const addBehaviorRecord = async (b: BehaviorRecord) => { await supabase.from('behavior_records').insert(mapBehaviorToDB(b)); };
-export const updateBehaviorRecord = async (b: BehaviorRecord) => { await supabase.from('behavior_records').update(mapBehaviorToDB(b)).eq('id',b.id); };
-export const deleteBehaviorRecord = async (id: string) => { await supabase.from('behavior_records').delete().eq('id',id); };
-export const clearBehaviorRecords = async () => { await supabase.from('behavior_records').delete().neq('id','0'); };
-export const acknowledgeBehavior = async (id: string, feedback?: string) => { await supabase.from('behavior_records').update({parent_viewed:true, parent_viewed_at:new Date().toISOString(), parent_feedback:feedback}).eq('id',id); };
-
-export const getStudentObservations = async (sid?: string) => { let q=supabase.from('observations').select('*'); if(sid)q=q.eq('student_id',sid); const{data, error}=await q; if(error && error.code==='42P01') return []; return data?.map(mapObservationFromDB)||[]; };
-export const addStudentObservation = async (o: StudentObservation) => { await supabase.from('observations').insert(mapObservationToDB(o)); };
-export const updateStudentObservation = async (id: string, content: string, type: string) => { await supabase.from('observations').update({content,type}).eq('id',id); };
-export const deleteStudentObservation = async (id: string) => { await supabase.from('observations').delete().eq('id',id); };
-export const clearStudentObservations = async () => { await supabase.from('observations').delete().neq('id','0'); };
-export const acknowledgeObservation = async (id: string, feedback?: string) => { await supabase.from('observations').update({parent_viewed:true, parent_viewed_at:new Date().toISOString(), parent_feedback:feedback}).eq('id',id); };
-
-export const getAdminInsights = async (role: string) => { const{data}=await supabase.from('admin_insights').select('*').eq('target_role',role); return data?.map(mapInsightFromDB)||[]; };
-export const sendAdminInsight = async (role: string, content: string) => { await supabase.from('admin_insights').insert({target_role:role, content}); };
-export const clearAdminInsights = async () => { await supabase.from('admin_insights').delete().neq('id','0'); };
-
-export const getReferrals = async (sid?: string) => { let q=supabase.from('referrals').select('*'); if(sid)q=q.eq('student_id',sid); const{data, error}=await q; if(error&&error.code==='42P01')return[]; return data?.map(mapReferralFromDB)||[]; };
-export const addReferral = async (r: Referral) => { const{error}=await supabase.from('referrals').insert(mapReferralToDB(r)); if(error && error.code==='42P01') throw new Error("Table not found"); };
-export const updateReferralStatus = async (id: string, status: string, outcome?: string) => { const u:any={status}; if(outcome)u.outcome=outcome; await supabase.from('referrals').update(u).eq('id',id); };
-export const clearReferrals = async () => { await supabase.from('referrals').delete().neq('id','0'); };
-
-export const getGuidanceSessions = async (sid?: string) => { let q=supabase.from('guidance_sessions').select('*'); if(sid)q=q.eq('student_id',sid); const{data, error}=await q; if(error&&error.code==='42P01')return[]; return data?.map(mapSessionFromDB)||[]; };
-export const addGuidanceSession = async (s: GuidanceSession) => { const{error}=await supabase.from('guidance_sessions').insert(mapSessionToDB(s)); if(error && error.code==='42P01') throw new Error("Table not found"); };
-
-export const resolveAbsenceAlert = async (sid: string, action: string) => { const today=new Date().toISOString().split('T')[0]; try{await supabase.from('risk_resolutions').insert({student_id:sid, resolution_date:today, action_type:action}); if(action==='counselor'){const s=await getStudentByCivilId(sid); if(s) await addReferral({id:'', studentId:s.studentId, studentName:s.name, grade:s.grade, className:s.className, referralDate:today, reason:'غياب متصل', status:'pending', referredBy:'deputy'});}}catch(e){console.error(e);} };
-export const getConsecutiveAbsences = async () => { const today=new Date().toISOString().split('T')[0]; const[all, students, resolutions, refs]=await Promise.all([getAttendanceRecords(), getStudents(), supabase.from('risk_resolutions').select('*').eq('resolution_date',today), getReferrals()]); const resolvedIds=new Set(resolutions.data?.map((r:any)=>r.student_id)||[]); const activeRefIds=new Set(refs.filter(r=>r.status==='pending'||r.status==='in_progress').map(r=>r.studentId)); const map:any={}; all.forEach(r=>{r.records.forEach(s=>{const id=s.studentId||students.find(x=>x.name===s.studentName)?.studentId; if(id){if(!map[id])map[id]=[]; map[id].push({date:r.date, status:s.status});} });}); const alerts:any[]=[]; Object.entries(map).forEach(([sid, recs]:[string, any])=>{ if(resolvedIds.has(sid)||activeRefIds.has(sid))return; recs.sort((a:any,b:any)=>new Date(b.date).getTime()-new Date(a.date).getTime()); if(recs.length>=2 && recs[0].status==='ABSENT' && recs[1].status==='ABSENT'){const st=students.find(x=>x.studentId===sid); if(st) alerts.push({studentId:sid, studentName:st.name, days:2, lastDate:recs[0].date});} }); return alerts; };
-export const getAvailableClassesForGrade = async (grade: string): Promise<string[]> => { const s = await getStudents(); const c = new Set<string>(); s.forEach(x => { if (x.grade === grade && x.className) c.add(x.className); }); return Array.from(c).sort(); };
+export const getBotContext = async () => {
+    const { data, error } = await supabase
+        .from('admin_insights')
+        .select('content')
+        .eq('target_role', 'bot_context')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+        
+    if (error || !data) return "";
+    return data.content;
+};

@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, Edit, Trash2, Printer, Loader2, FileText, School, User, Calendar, Sparkles, Trophy } from 'lucide-react';
-import { getStudents, addStudentObservation, getStudentObservations, updateStudentObservation, deleteStudentObservation, analyzeSentiment, addStudentPoints } from '../../services/storage';
+import { Search, Plus, Edit, Trash2, Printer, Loader2, FileText, School, User, Calendar, Sparkles, Trophy, Wand2 } from 'lucide-react';
+import { getStudents, addStudentObservation, getStudentObservations, updateStudentObservation, deleteStudentObservation, analyzeSentiment, addStudentPoints, generateSmartContent } from '../../services/storage';
 import { Student, StaffUser, StudentObservation } from '../../types';
 import { GRADES } from '../../constants';
 
@@ -27,6 +28,7 @@ const StaffObservations: React.FC = () => {
   const [sentiment, setSentiment] = useState<'positive'|'negative'|'neutral'|null>(null);
   const [points, setPoints] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
+  const [isRewriting, setIsRewriting] = useState(false);
 
   // Search State
   const [searchTerm, setSearchTerm] = useState('');
@@ -119,6 +121,27 @@ const StaffObservations: React.FC = () => {
       const res = await analyzeSentiment(obsContent);
       setSentiment(res);
       setAnalyzing(false);
+  };
+
+  const handleImprovePhrasing = async () => {
+    if (!obsContent.trim()) {
+        alert("يرجى كتابة نص الملاحظة أولاً");
+        return;
+    }
+    setIsRewriting(true);
+    try {
+        const prompt = `
+        بصفتك خبيراً تربوياً ولغوياً، قم بإعادة صياغة الملاحظة المدرسية التالية.
+        الهدف: جعل الأسلوب مهنياً، تربوياً، واضحاً، وخالياً من الأخطاء اللغوية، مع الحفاظ على المعنى الأصلي.
+        النص الأصلي: "${obsContent}"
+        `;
+        const result = await generateSmartContent(prompt);
+        setObsContent(result.trim());
+    } catch (error) {
+        alert("تعذر تحسين الصيغة حالياً");
+    } finally {
+        setIsRewriting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -268,9 +291,18 @@ const StaffObservations: React.FC = () => {
                 <div>
                   <label className="text-xs font-bold text-slate-500 block mb-1">نص الملاحظة</label>
                   <textarea required value={obsContent} onChange={e => setObsContent(e.target.value)} className="w-full p-3 border rounded-lg min-h-[100px]" placeholder="اكتب الملاحظة هنا..."></textarea>
-                  <div className="flex justify-end mt-2 items-center gap-2">
-                      {sentiment && <span className={`text-xs px-2 py-1 rounded font-bold ${sentiment === 'positive' ? 'bg-emerald-100 text-emerald-700' : sentiment === 'negative' ? 'bg-red-100 text-red-700' : 'bg-slate-100'}`}>{sentiment === 'positive' ? 'إيجابي' : sentiment === 'negative' ? 'سلبي' : 'محايد'}</span>}
-                      <button type="button" onClick={checkSentiment} disabled={analyzing} className="text-xs flex items-center gap-1 text-purple-600 font-bold hover:bg-purple-50 px-2 py-1 rounded">{analyzing ? <Loader2 className="animate-spin" size={12}/> : <Sparkles size={12}/>} تحليل نبرة الملاحظة (AI)</button>
+                  <div className="flex justify-between mt-2 items-center gap-2">
+                      <div className="flex gap-2">
+                        {sentiment && <span className={`text-xs px-2 py-1 rounded font-bold ${sentiment === 'positive' ? 'bg-emerald-100 text-emerald-700' : sentiment === 'negative' ? 'bg-red-100 text-red-700' : 'bg-slate-100'}`}>{sentiment === 'positive' ? 'إيجابي' : sentiment === 'negative' ? 'سلبي' : 'محايد'}</span>}
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleImprovePhrasing} disabled={isRewriting} className="text-xs flex items-center gap-1 text-blue-600 font-bold hover:bg-blue-50 px-2 py-1 rounded border border-blue-100 bg-white">
+                            {isRewriting ? <Loader2 className="animate-spin" size={12}/> : <Wand2 size={12}/>} تحسين الصيغة
+                        </button>
+                        <button type="button" onClick={checkSentiment} disabled={analyzing} className="text-xs flex items-center gap-1 text-purple-600 font-bold hover:bg-purple-50 px-2 py-1 rounded border border-purple-100 bg-white">
+                            {analyzing ? <Loader2 className="animate-spin" size={12}/> : <Sparkles size={12}/>} تحليل النبرة
+                        </button>
+                      </div>
                   </div>
                 </div>
 

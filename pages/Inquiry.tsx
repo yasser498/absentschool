@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { 
   Search, User, School, Copy, Check, CalendarDays, AlertCircle, Loader2, 
   FileText, ShieldAlert, Star, MessageSquare, Send, CheckCircle, Clock, Plus, Users, Bell, 
   LogOut, ChevronRight, ArrowLeft, Activity, ChevronLeft, Archive, AlertTriangle, 
-  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode
+  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer
 } from 'lucide-react';
 import { 
   getStudentByCivilId, getRequestsByStudentId, getStudentAttendanceHistory, 
@@ -23,7 +24,7 @@ const { useNavigate } = ReactRouterDOM as any;
 const Inquiry: React.FC = () => {
   const navigate = useNavigate();
   
-  // ... (Existing State) ...
+  // State
   const [parentCivilId, setParentCivilId] = useState(localStorage.getItem('ozr_parent_id') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('ozr_parent_id'));
   const [authLoading, setAuthLoading] = useState(false);
@@ -33,12 +34,12 @@ const Inquiry: React.FC = () => {
   const [news, setNews] = useState<SchoolNews[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDigitalId, setShowDigitalId] = useState(false);
-  const [showBookingModal, setShowBookingModal] = useState(false); // NEW: Success Modal for Booking
+  const [showBookingModal, setShowBookingModal] = useState(false);
   
-  // Tabs including 'visits'
+  // Tabs
   const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'attendance' | 'archive' | 'behavior' | 'observations' | 'visits'>('overview');
   
-  // ... (Existing Data State) ...
+  // Data State
   const [history, setHistory] = useState<ExcuseRequest[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<{ date: string, status: AttendanceStatus }[]>([]);
   const [behaviorHistory, setBehaviorHistory] = useState<BehaviorRecord[]>([]);
@@ -67,7 +68,7 @@ const Inquiry: React.FC = () => {
   const [isBooking, setIsBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState<Appointment | null>(null);
 
-  // ... (Authentication & Load Logic) ...
+  // Authentication & Load Logic
   const handleLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!parentCivilId) return;
@@ -105,7 +106,7 @@ const Inquiry: React.FC = () => {
       if (isAuthenticated) loadParentDashboard();
   }, [isAuthenticated]);
 
-  // ... (Helpers) ...
+  // Helpers
   const handleAddChild = async (e: React.FormEvent) => { e.preventDefault(); if (!newChildId) return; setLoading(true); try { const student = await getStudentByCivilId(newChildId); if (!student) { alert("لم يتم العثور على طالب بهذا الرقم."); } else { await linkParentToStudent(parentCivilId, student.studentId); await loadParentDashboard(); setNewChildId(''); setIsAddingChild(false); alert("تم الإضافة!"); } } catch (e) { alert("حدث خطأ."); } finally { setLoading(false); } };
   
   const handleSelectStudent = async (student: Student) => {
@@ -135,9 +136,7 @@ const Inquiry: React.FC = () => {
   const unexcusedAbsences = useMemo(() => { if (!attendanceHistory.length) return []; return attendanceHistory.filter(record => { if (record.status !== AttendanceStatus.ABSENT) return false; const hasRequest = history.some(req => req.date === record.date); return !hasRequest; }); }, [attendanceHistory, history]);
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   
-  // ... (Acknowledge & Reply Logic) ...
-  const handleAcknowledge = async (type: 'behavior' | 'observation', id: string) => { if(!window.confirm("تأكيد الاطلاع؟")) return; setSubmittingReply(true); try { if (type === 'behavior') await acknowledgeBehavior(id); else await acknowledgeObservation(id); if(selectedStudent) await handleSelectStudent(selectedStudent); } finally { setSubmittingReply(false); } };
-  
+  // Reply Logic
   const handleSubmitReply = async () => {
       if (!replyMode || !replyContent.trim()) return;
       setSubmittingReply(true);
@@ -166,34 +165,31 @@ const Inquiry: React.FC = () => {
               visitReason: visitReason
           });
           setBookingSuccess(appt);
-          setShowBookingModal(true); // Show modal instead of inline
+          setShowBookingModal(true);
           setVisitReason('');
-          // Refresh
           const [newSlots, newApps] = await Promise.all([getAvailableSlots(), getMyAppointments(parentCivilId)]);
           setAvailableSlots(newSlots);
           setMyAppointments(newApps.filter(a => a.studentId === selectedStudent.studentId));
       } catch (e: any) { alert(e.message || "حدث خطأ"); } finally { setIsBooking(false); }
   };
 
-  // ... (Calendar Logic - Kept same) ...
+  // Calendar Logic
   const getDaysInMonth = (date: Date) => { const year = date.getFullYear(); const month = date.getMonth(); const daysInMonth = new Date(year, month + 1, 0).getDate(); const firstDay = new Date(year, month, 1).getDay(); const days = []; for (let i = 0; i < firstDay; i++) days.push(null); for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i)); return days; };
   const getAttendanceStatusForDate = (date: Date) => { const dateStr = date.toISOString().split('T')[0]; const record = attendanceHistory.find(r => r.date === dateStr); return record ? record.status : null; };
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   if (!isAuthenticated) {
-      // ... (Login Render - Same) ...
       return (<div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans"><div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 relative overflow-hidden"><div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-purple-600"></div><div className="text-center mb-8"><div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-100"><Users size={32} className="text-blue-600"/></div><h1 className="text-2xl font-bold text-slate-800">بوابة ولي الأمر</h1><p className="text-slate-500 text-sm mt-2">سجل دخولك برقم الهوية لمتابعة أبنائك</p></div><form onSubmit={handleLogin} className="space-y-6"><div><label className="block text-xs font-bold text-slate-500 mb-2 uppercase">رقم الهوية / السجل المدني</label><input type="text" required maxLength={10} value={parentCivilId} onChange={e => setParentCivilId(e.target.value.replace(/[^0-9]/g, ''))} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-xl font-bold tracking-widest focus:ring-2 focus:ring-blue-600 outline-none" placeholder="1XXXXXXXXX"/></div><button disabled={authLoading} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2">{authLoading ? <Loader2 className="animate-spin"/> : 'تسجيل الدخول'}</button></form></div></div>);
   }
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20 font-sans relative">
-        {/* ... (Header & Notifications & News - Kept same) ... */}
         <div className="bg-white sticky top-0 z-30 border-b border-slate-100 shadow-sm"><div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between"><div className="flex items-center gap-2 font-bold text-slate-800"><Users className="text-blue-600"/> بوابة ولي الأمر</div><div className="flex items-center gap-3"><button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 rounded-full hover:bg-slate-100"><Bell size={24} className="text-slate-600"/>{unreadCount > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</button><button onClick={handleLogout} className="p-2 rounded-full hover:bg-red-50 text-slate-400 hover:text-red-500"><LogOut size={20}/></button></div></div></div>
         {showNotifications && (<div className="max-w-5xl mx-auto px-4 relative z-20"><div className="absolute top-2 left-4 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden"><div className="p-3 border-b border-slate-50 font-bold text-sm bg-slate-50">الإشعارات</div><div className="max-h-64 overflow-y-auto">{notifications.length === 0 ? <p className="p-4 text-center text-xs text-slate-400">لا توجد إشعارات</p> : notifications.map(n => (<div key={n.id} className={`p-3 border-b border-slate-50 text-sm ${!n.isRead ? 'bg-blue-50/50' : ''}`} onClick={() => markNotificationRead(n.id)}><p className="font-bold text-slate-800">{n.title}</p><p className="text-xs text-slate-500 mt-1">{n.message}</p></div>))}</div></div></div>)}
 
         <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
             
-            {/* NEWS (Only if no student selected) */}
+            {/* NEWS */}
             {news.length > 0 && !selectedStudent && (
                 <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden p-4 relative animate-fade-in"><div className="flex items-center gap-2 mb-3"><span className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider animate-pulse">هام</span><h3 className="font-bold text-slate-800 flex items-center gap-2"><Newspaper size={16} className="text-blue-500"/> أخبار المدرسة</h3></div><div className="space-y-3">{news.slice(0, 3).map(n => (<div key={n.id} className={`p-3 rounded-xl border-l-4 ${n.isUrgent ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}`}><h4 className="font-bold text-sm text-slate-900">{n.title}</h4><p className="text-xs text-slate-600 mt-1 line-clamp-2">{n.content}</p><div className="mt-2 text-[10px] text-slate-400 flex justify-between"><span>{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span><span>بواسطة: {n.author}</span></div></div>))}</div></div>
             )}
@@ -235,17 +231,145 @@ const Inquiry: React.FC = () => {
 
                     {loading ? <div className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600"/></div> : (
                         <div className="min-h-[300px]">
-                            {/* ... (Existing Tabs - Overview, Attendance, etc.) ... */}
+                            {/* OVERVIEW */}
                             {activeTab === 'overview' && (
                                 <div className="space-y-6 animate-fade-in">
                                     {unexcusedAbsences.length > 0 && (<div className="bg-red-50 border-2 border-red-100 rounded-2xl p-5 shadow-sm"><div className="flex justify-between items-start mb-4"><h3 className="font-bold text-red-800 flex items-center gap-2"><AlertTriangle className="text-red-600"/> غياب لم يتم تقديم عذر له</h3><span className="bg-white text-red-600 px-3 py-1 rounded-lg text-xs font-bold border border-red-100">{unexcusedAbsences.length} أيام</span></div><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{unexcusedAbsences.map((rec, idx) => (<div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-red-100"><span className="font-mono font-bold text-slate-700">{rec.date}</span><button onClick={() => navigate(`/submit?studentId=${selectedStudent.studentId}&date=${rec.date}`)} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-red-700 transition-colors">تقديم عذر</button></div>))}</div></div>)}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Clock className="text-blue-500"/> الحضور والغياب</h3><div className="flex justify-between text-center"><div><p className="text-2xl font-bold text-red-600">{attendanceHistory.filter(x=>x.status==='ABSENT').length}</p><p className="text-xs text-slate-400">غياب</p></div><div><p className="text-2xl font-bold text-amber-500">{attendanceHistory.filter(x=>x.status==='LATE').length}</p><p className="text-xs text-slate-400">تأخر</p></div><div><p className="text-2xl font-bold text-emerald-600">{attendanceHistory.filter(x=>x.status==='PRESENT').length}</p><p className="text-xs text-slate-400">حضور</p></div></div></div><div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Star className="text-amber-500"/> نقاط التميز</h3>{points.history.length > 0 ? (<div className="space-y-3">{points.history.slice(0,3).map(p => (<div key={p.id} className="flex justify-between text-sm bg-amber-50 p-2 rounded-lg text-amber-800"><span>{p.reason}</span><span className="font-bold">+{p.points}</span></div>))}</div>) : <p className="text-slate-400 text-sm">لا يوجد نقاط مكتسبة بعد.</p>}</div></div>
-                                    {/* ... Behavior & Observations Overview ... */}
+                                </div>
+                            )}
+
+                            {/* ARCHIVE - FIXED */}
+                            {activeTab === 'archive' && (
+                                <div className="space-y-4 animate-fade-in">
+                                    {history.length === 0 ? (
+                                        <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200">
+                                            <FileText size={48} className="mx-auto mb-4 opacity-20 text-slate-400"/>
+                                            <p className="text-slate-500 font-medium">لم يتم تقديم أي أعذار سابقة لهذا الطالب.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid gap-4">
+                                            {history.map(req => (
+                                                <div key={req.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row gap-4 items-start md:items-center justify-between group">
+                                                    <div className="flex items-start gap-4">
+                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-xl font-bold ${
+                                                            req.status === RequestStatus.APPROVED ? 'bg-emerald-100 text-emerald-600' :
+                                                            req.status === RequestStatus.REJECTED ? 'bg-red-100 text-red-600' :
+                                                            'bg-amber-100 text-amber-600'
+                                                        }`}>
+                                                            {req.status === RequestStatus.APPROVED ? <CheckCircle size={24}/> :
+                                                             req.status === RequestStatus.REJECTED ? <X size={24}/> :
+                                                             <Clock size={24}/>}
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className="font-mono font-bold text-slate-800 text-lg">{req.date}</span>
+                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                                    req.status === RequestStatus.APPROVED ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                                                                    req.status === RequestStatus.REJECTED ? 'bg-red-50 text-red-700 border border-red-100' :
+                                                                    'bg-amber-50 text-amber-700 border border-amber-100'
+                                                                }`}>
+                                                                    {req.status === RequestStatus.APPROVED ? 'تم القبول' : req.status === RequestStatus.REJECTED ? 'مرفوض' : 'قيد المراجعة'}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-slate-600 font-medium text-sm">{req.reason} {req.details ? `- ${req.details}` : ''}</p>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {req.attachmentUrl && (
+                                                        <a 
+                                                            href={req.attachmentUrl} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer"
+                                                            className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-50 transition-colors border border-slate-100 w-full md:w-auto justify-center"
+                                                        >
+                                                            <Paperclip size={14}/> عرض المرفق
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ATTENDANCE CALENDAR - FIXED */}
+                            {activeTab === 'attendance' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <button onClick={() => setCalendarMonth(new Date(calendarMonth.setMonth(calendarMonth.getMonth() - 1)))} className="p-2 hover:bg-slate-100 rounded-full"><ChevronRight size={20}/></button>
+                                            <h3 className="font-bold text-lg text-slate-800">{calendarMonth.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })}</h3>
+                                            <button onClick={() => setCalendarMonth(new Date(calendarMonth.setMonth(calendarMonth.getMonth() + 1)))} className="p-2 hover:bg-slate-100 rounded-full"><ChevronLeft size={20}/></button>
+                                        </div>
+                                        <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-400 mb-2">
+                                            <div>الأحد</div><div>الإثنين</div><div>الثلاثاء</div><div>الأربعاء</div><div>الخميس</div><div>الجمعة</div><div>السبت</div>
+                                        </div>
+                                        <div className="grid grid-cols-7 gap-2">
+                                            {getDaysInMonth(calendarMonth).map((date, i) => {
+                                                if (!date) return <div key={i}></div>;
+                                                const status = getAttendanceStatusForDate(date);
+                                                const isWeekend = date.getDay() === 5 || date.getDay() === 6;
+                                                const isFuture = date > new Date();
+                                                
+                                                let bgClass = 'bg-slate-50 border-slate-100 text-slate-700';
+                                                if (status === AttendanceStatus.ABSENT) bgClass = 'bg-red-500 text-white border-red-500 shadow-md shadow-red-200';
+                                                else if (status === AttendanceStatus.LATE) bgClass = 'bg-amber-400 text-white border-amber-400 shadow-md shadow-amber-200';
+                                                else if (status === AttendanceStatus.PRESENT) bgClass = 'bg-emerald-500 text-white border-emerald-500';
+                                                else if (isWeekend) bgClass = 'bg-slate-100 text-slate-300 border-transparent';
+                                                
+                                                return (
+                                                    <div key={i} className={`h-12 md:h-16 rounded-xl border flex items-center justify-center text-sm font-bold transition-all ${bgClass} ${!isWeekend && !isFuture && !status ? 'opacity-50' : ''}`}>
+                                                        {date.getDate()}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <div className="flex gap-4 justify-center mt-6 text-xs font-bold text-slate-600">
+                                            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-emerald-500"></div>حضور</div>
+                                            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-500"></div>غياب</div>
+                                            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-amber-400"></div>تأخر</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* SMART REPORT - FIXED */}
+                            {activeTab === 'report' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl p-8 text-white relative overflow-hidden shadow-lg">
+                                        <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl -mr-20 -mt-20"></div>
+                                        <div className="relative z-10 text-center">
+                                            <Sparkles className="mx-auto mb-4 text-amber-300" size={48}/>
+                                            <h2 className="text-2xl font-bold mb-2">التقرير التربوي الذكي</h2>
+                                            <p className="text-blue-100 mb-6 max-w-md mx-auto">يقوم نظامنا بتحليل بيانات الحضور والسلوك والملاحظات ليقدم لك تقريراً شاملاً ونصائح تربوية مخصصة لابنك.</p>
+                                            <button 
+                                                onClick={handleGenerateSmartReport} 
+                                                disabled={generatingReport}
+                                                className="bg-white text-blue-700 px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-50 transition-all flex items-center justify-center gap-2 mx-auto disabled:opacity-70 disabled:cursor-not-allowed"
+                                            >
+                                                {generatingReport ? <Loader2 className="animate-spin"/> : <Sparkles size={18}/>}
+                                                {generatingReport ? 'جاري إعداد التقرير...' : 'إصدار التقرير الآن'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {smartReport && (
+                                        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm animate-fade-in-up">
+                                            <div className="prose prose-lg text-slate-800 leading-relaxed whitespace-pre-line font-medium text-right">
+                                                {smartReport}
+                                            </div>
+                                            <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end">
+                                                <button onClick={() => window.print()} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold">
+                                                    <Printer size={18}/> طباعة التقرير
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             
-                            {/* ... (Other tabs Logic same as previous file, just condensed here for brevity) ... */}
-                            
+                            {/* Visits */}
                             {activeTab === 'visits' && (
                                 <div className="space-y-6 animate-fade-in">
                                     {myAppointments.filter(a => a.status === 'pending').length > 0 && (

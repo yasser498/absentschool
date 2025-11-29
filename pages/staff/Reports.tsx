@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, BarChart2, Users, AlertCircle, Clock, CheckCircle, School, ChevronDown, Loader2, Printer, PieChart as PieIcon, TrendingUp, ArrowUpRight, Grid } from 'lucide-react';
-import { getDailyAttendanceReport, getStudents, getAttendanceRecords } from '../../services/storage';
-import { AttendanceStatus, StaffUser, ClassAssignment, AttendanceRecord } from '../../types';
+import { getDailyAttendanceReport, getStudents, getAttendanceRecords, getRequests } from '../../services/storage';
+import { AttendanceStatus, StaffUser, ClassAssignment, AttendanceRecord, RequestStatus, ExcuseRequest } from '../../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 const StaffReports: React.FC = () => {
@@ -20,6 +20,7 @@ const StaffReports: React.FC = () => {
     details: any[];
   } | null>(null);
   const [dailyClassSummary, setDailyClassSummary] = useState<any[]>([]);
+  const [dateRequests, setDateRequests] = useState<ExcuseRequest[]>([]);
   
   // Stats State
   const [statsData, setStatsData] = useState<any>(null);
@@ -45,10 +46,15 @@ const StaffReports: React.FC = () => {
       if (!currentUser || activeTab !== 'daily') return;
       setLoading(true);
       try {
-        const [data, allStudents] = await Promise.all([
+        const [data, allStudents, allRequests] = await Promise.all([
             getDailyAttendanceReport(selectedDate),
-            getStudents()
+            getStudents(),
+            getRequests()
         ]);
+        
+        // Filter requests for the selected date
+        const reqs = allRequests.filter(r => r.date === selectedDate);
+        setDateRequests(reqs);
         
         const assignedClasses = currentUser.assignments || [];
         const filteredDetails = data.details.filter(d => 
@@ -239,6 +245,11 @@ const StaffReports: React.FC = () => {
     window.print();
   };
 
+  const getExcuseStatus = (studentId: string, studentName: string) => {
+      const req = dateRequests.find(r => r.studentId === studentId) || dateRequests.find(r => r.studentName === studentName);
+      return req ? req.status : null;
+  };
+
   if (!currentUser) return null;
 
   const pieData = statsData ? [
@@ -293,19 +304,27 @@ const StaffReports: React.FC = () => {
                         <th className="border p-2">الصف</th>
                         <th className="border p-2">الفصل</th>
                         <th className="border p-2">الحالة</th>
+                        <th className="border p-2">العذر</th>
                     </tr>
                     </thead>
                     <tbody>
-                    {reportData.details.map((d, idx) => (
+                    {reportData.details.map((d, idx) => {
+                        const status = getExcuseStatus(d.studentId, d.studentName);
+                        return (
                         <tr key={idx}>
                             <td className="border p-2">{d.studentName}</td>
                             <td className="border p-2">{d.grade}</td>
                             <td className="border p-2">{d.className}</td>
                             <td className="border p-2">{d.status === AttendanceStatus.ABSENT ? 'غائب' : 'متأخر'}</td>
+                            <td className="border p-2">
+                                {status === RequestStatus.APPROVED ? 'مقبول ✅' : 
+                                 status === RequestStatus.REJECTED ? 'مرفوض ❌' : 
+                                 status === RequestStatus.PENDING ? 'قيد المراجعة ⏳' : '-'}
+                            </td>
                         </tr>
-                    ))}
+                    )})}
                     {reportData.details.length === 0 && (
-                        <tr><td colSpan={4} className="border p-4 text-center">لا يوجد غياب أو تأخر مسجل للفصول المسندة</td></tr>
+                        <tr><td colSpan={5} className="border p-4 text-center">لا يوجد غياب أو تأخر مسجل للفصول المسندة</td></tr>
                     )}
                     </tbody>
                 </table>
@@ -419,31 +438,53 @@ const StaffReports: React.FC = () => {
                                         <th className="p-4">الصف</th>
                                         <th className="p-4">الفصل</th>
                                         <th className="p-4">الحالة</th>
+                                        <th className="p-4">حالة العذر</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                        {reportData.details.map((d, idx) => (
-                                        <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                                            <td className="p-4 font-bold text-slate-800">{d.studentName}</td>
-                                            <td className="p-4 text-slate-600">{d.grade}</td>
-                                            <td className="p-4 text-slate-600">{d.className}</td>
-                                            <td className="p-4">
-                                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                                    d.status === AttendanceStatus.ABSENT 
-                                                    ? 'bg-red-100 text-red-700' 
-                                                    : 'bg-amber-100 text-amber-700'
-                                                }`}>
-                                                    {d.status === AttendanceStatus.ABSENT ? 'غائب' : 'متأخر'}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                        ))}
+                                        {reportData.details.map((d, idx) => {
+                                            const status = getExcuseStatus(d.studentId, d.studentName);
+                                            return (
+                                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                <td className="p-4 font-bold text-slate-800">{d.studentName}</td>
+                                                <td className="p-4 text-slate-600">{d.grade}</td>
+                                                <td className="p-4 text-slate-600">{d.className}</td>
+                                                <td className="p-4">
+                                                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                                        d.status === AttendanceStatus.ABSENT 
+                                                        ? 'bg-red-100 text-red-700' 
+                                                        : 'bg-amber-100 text-amber-700'
+                                                    }`}>
+                                                        {d.status === AttendanceStatus.ABSENT ? 'غائب' : 'متأخر'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-4">
+                                                    {status ? (
+                                                        <span className={`flex items-center gap-1.5 w-fit px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                                                            status === RequestStatus.APPROVED ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                            status === RequestStatus.REJECTED ? 'bg-red-50 text-red-700 border-red-200' :
+                                                            'bg-amber-50 text-amber-700 border-amber-200'
+                                                        }`}>
+                                                            <div className={`w-1.5 h-1.5 rounded-full ${
+                                                                status === RequestStatus.APPROVED ? 'bg-emerald-500' :
+                                                                status === RequestStatus.REJECTED ? 'bg-red-500' :
+                                                                'bg-amber-500'
+                                                            }`}></div>
+                                                            {status === RequestStatus.APPROVED ? 'مقبول' : 
+                                                             status === RequestStatus.REJECTED ? 'مرفوض' : 'قيد المراجعة'}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-slate-400 text-xs px-2 py-1 bg-slate-50 rounded border border-slate-100">لا يوجد عذر</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )})}
                                     </tbody>
                                 </table>
                             )}
                         </div>
 
-                        {/* NEW: Daily Class Summary */}
+                        {/* Daily Class Summary */}
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mt-8">
                              <div className="bg-slate-50 px-6 py-4 border-b border-slate-100">
                                 <h3 className="font-bold text-slate-800 flex items-center gap-2">

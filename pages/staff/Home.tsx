@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardCheck, MessageSquare, BookUser, BarChart2, ShieldCheck, LogOut, Briefcase, FileText, BellRing, Sparkles } from 'lucide-react';
+import { ClipboardCheck, MessageSquare, BookUser, BarChart2, ShieldCheck, LogOut, Briefcase, FileText, BellRing, Sparkles, X, Calendar, User } from 'lucide-react';
 import { StaffUser, SchoolNews, AdminInsight } from '../../types';
 import { getSchoolNews, getAdminInsights } from '../../services/storage';
 
@@ -10,6 +10,15 @@ const StaffHome: React.FC = () => {
   const [user, setUser] = useState<StaffUser | null>(null);
   const [news, setNews] = useState<SchoolNews[]>([]);
   const [directives, setDirectives] = useState<AdminInsight[]>([]);
+  
+  // State for viewing full details
+  const [selectedItem, setSelectedItem] = useState<{
+    title: string;
+    content: string;
+    date: string;
+    type: 'news' | 'directive';
+    author?: string;
+  } | null>(null);
 
   useEffect(() => {
     const session = localStorage.getItem('ozr_staff_session');
@@ -87,7 +96,7 @@ const StaffHome: React.FC = () => {
     },
     {
       key: 'deputy',
-      title: 'وكيل الشؤون الطلابية',
+      title: 'وكيل شؤون الطلاب',
       desc: 'إدارة السلوك والمواظبة والإجراءات الإدارية.',
       icon: Briefcase,
       path: '/staff/deputy',
@@ -112,7 +121,7 @@ const StaffHome: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-8 animate-fade-in py-8">
+    <div className="space-y-8 animate-fade-in py-8 relative">
       {/* Welcome Header */}
       <div className="bg-white p-8 rounded-3xl shadow-lg shadow-blue-900/5 border border-slate-100 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-32 h-full bg-gradient-to-r from-blue-50 to-transparent"></div>
@@ -167,13 +176,26 @@ const StaffHome: React.FC = () => {
                       {news.length === 0 ? <p className="text-sm text-slate-400">لا يوجد أخبار جديدة.</p> : (
                           <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar">
                               {news.map(n => (
-                                  <div key={n.id} className={`p-4 rounded-xl border-l-4 ${n.isUrgent ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}`}>
+                                  <div 
+                                    key={n.id} 
+                                    onClick={() => setSelectedItem({
+                                        title: n.title,
+                                        content: n.content,
+                                        date: n.createdAt,
+                                        type: 'news',
+                                        author: n.author
+                                    })}
+                                    className={`p-4 rounded-xl border-l-4 cursor-pointer hover:bg-slate-50 transition-colors ${n.isUrgent ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}`}
+                                  >
                                       <div className="flex justify-between items-start mb-1">
-                                          <h4 className="font-bold text-slate-900 text-sm">{n.title}</h4>
-                                          {n.isUrgent && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold">هام</span>}
+                                          <h4 className="font-bold text-slate-900 text-sm line-clamp-1">{n.title}</h4>
+                                          {n.isUrgent && <span className="text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded font-bold shrink-0">هام</span>}
                                       </div>
                                       <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">{n.content}</p>
-                                      <span className="text-[10px] text-slate-400 mt-2 block">{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
+                                      <span className="text-[10px] text-slate-400 mt-2 flex justify-between">
+                                          <span>{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
+                                          <span className="text-blue-600 font-bold">اقرأ المزيد</span>
+                                      </span>
                                   </div>
                               ))}
                           </div>
@@ -186,11 +208,20 @@ const StaffHome: React.FC = () => {
                       {directives.length === 0 ? <p className="text-sm text-slate-400">لا يوجد تعاميم موجهة للمعلمين.</p> : (
                           <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar">
                               {directives.map(d => (
-                                  <div key={d.id} className="p-4 rounded-xl bg-purple-50 border border-purple-100">
+                                  <div 
+                                    key={d.id} 
+                                    onClick={() => setSelectedItem({
+                                        title: 'توجيه إداري',
+                                        content: d.content,
+                                        date: d.createdAt,
+                                        type: 'directive'
+                                    })}
+                                    className="p-4 rounded-xl bg-purple-50 border border-purple-100 cursor-pointer hover:bg-purple-100 transition-colors"
+                                  >
                                       <div className="flex items-center gap-2 mb-2 text-purple-700 font-bold text-sm">
                                           <Sparkles size={14}/> توجيه إداري
                                       </div>
-                                      <p className="text-xs text-slate-700 leading-relaxed font-medium">{d.content}</p>
+                                      <p className="text-xs text-slate-700 leading-relaxed font-medium line-clamp-3">{d.content}</p>
                                       <span className="text-[10px] text-purple-400 mt-2 block text-left">{new Date(d.createdAt).toLocaleDateString('ar-SA')}</span>
                                   </div>
                               ))}
@@ -199,6 +230,37 @@ const StaffHome: React.FC = () => {
                   </div>
               </div>
           </div>
+      )}
+
+      {/* DETAIL MODAL */}
+      {selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in" onClick={() => setSelectedItem(null)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                <div className={`p-6 text-white flex justify-between items-start shrink-0 ${selectedItem.type === 'news' ? 'bg-blue-900' : 'bg-purple-800'}`}>
+                    <div>
+                        <span className="inline-block px-2 py-1 rounded bg-white/20 text-[10px] font-bold mb-2">
+                            {selectedItem.type === 'news' ? 'خبر مدرسي' : 'تعميم إداري'}
+                        </span>
+                        <h2 className="text-xl font-bold leading-tight">{selectedItem.title}</h2>
+                        <div className="flex items-center gap-4 mt-3 text-xs text-white/80">
+                            <span className="flex items-center gap-1"><Calendar size={12}/> {new Date(selectedItem.date).toLocaleDateString('ar-SA')}</span>
+                            {selectedItem.author && <span className="flex items-center gap-1"><User size={12}/> {selectedItem.author}</span>}
+                        </div>
+                    </div>
+                    <button onClick={() => setSelectedItem(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors"><X size={20}/></button>
+                </div>
+                <div className="p-6 overflow-y-auto custom-scrollbar">
+                    <p className="text-slate-800 text-base leading-loose whitespace-pre-line font-medium">
+                        {selectedItem.content}
+                    </p>
+                </div>
+                <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                    <button onClick={() => setSelectedItem(null)} className="px-6 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-100 transition-colors">
+                        إغلاق
+                    </button>
+                </div>
+            </div>
+        </div>
       )}
 
       <div className="text-center pt-8 border-t border-slate-100 mt-8">

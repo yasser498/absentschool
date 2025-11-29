@@ -1,12 +1,57 @@
-import React from 'react';
+
+import React, { useEffect, useState } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { FileText, Search, ArrowLeft, ShieldCheck, Users, School, ArrowRight, LayoutGrid } from 'lucide-react';
+import { FileText, Search, ArrowLeft, ShieldCheck, Users, School, ArrowRight, LayoutGrid, BellRing, Megaphone, Calendar } from 'lucide-react';
+import { getSchoolNews } from '../services/storage';
+import { SchoolNews } from '../types';
 
 const { Link } = ReactRouterDOM as any;
 
 const Home: React.FC = () => {
+  const [urgentNews, setUrgentNews] = useState<SchoolNews[]>([]);
+  const [regularNews, setRegularNews] = useState<SchoolNews[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchNews = async () => {
+      try {
+        const data = await getSchoolNews();
+        setUrgentNews(data.filter(n => n.isUrgent));
+        setRegularNews(data.filter(n => !n.isUrgent));
+      } catch (e) {
+        console.error("Failed to load news");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchNews();
+  }, []);
+
   return (
-    <div className="space-y-12 animate-fade-in">
+    <div className="space-y-12 animate-fade-in pb-10">
+      
+      {/* URGENT NEWS BANNER */}
+      {urgentNews.length > 0 && (
+        <div className="space-y-3">
+          {urgentNews.map(news => (
+            <div key={news.id} className="bg-red-600 text-white p-4 md:p-5 rounded-2xl shadow-lg shadow-red-600/20 flex items-start gap-4 animate-pulse-slow border border-red-500 relative overflow-hidden">
+               <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/diagonal-stripes.png')] opacity-10"></div>
+               <div className="bg-white/20 p-2.5 rounded-xl shrink-0 backdrop-blur-sm animate-bounce-slow">
+                  <BellRing size={24} className="text-white" />
+               </div>
+               <div className="relative z-10">
+                  <h3 className="font-bold text-lg mb-1 flex items-center gap-2">
+                    {news.title}
+                    <span className="bg-white text-red-600 text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wider">عاجل</span>
+                  </h3>
+                  <p className="text-red-50 text-sm leading-relaxed opacity-90">{news.content}</p>
+                  <p className="text-[10px] text-red-200 mt-2 font-bold">{new Date(news.createdAt).toLocaleDateString('ar-SA')}</p>
+               </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-blue-900 to-slate-900 text-white rounded-3xl p-8 md:p-12 relative overflow-hidden shadow-2xl shadow-blue-900/20">
           <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
@@ -69,6 +114,29 @@ const Home: React.FC = () => {
             </Link>
           </div>
       </div>
+
+      {/* LATEST NEWS SECTION */}
+      {regularNews.length > 0 && (
+        <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                <Megaphone className="text-purple-600"/> أخبار المدرسة
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {regularNews.slice(0, 3).map(news => (
+                    <div key={news.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col">
+                        <div className="flex items-center gap-2 mb-3">
+                            <span className="bg-purple-50 text-purple-600 p-2 rounded-lg"><Megaphone size={16}/></span>
+                            <span className="text-xs font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded flex items-center gap-1">
+                                <Calendar size={12}/> {new Date(news.createdAt).toLocaleDateString('ar-SA')}
+                            </span>
+                        </div>
+                        <h3 className="font-bold text-slate-900 mb-2 line-clamp-1">{news.title}</h3>
+                        <p className="text-sm text-slate-500 line-clamp-3 leading-relaxed mb-4 flex-1">{news.content}</p>
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
 
       {/* Staff Login Area */}
       <div className="bg-slate-900 rounded-3xl p-8 text-center md:text-right relative overflow-hidden">

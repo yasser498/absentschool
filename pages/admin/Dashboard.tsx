@@ -7,7 +7,7 @@ import {
   Search, Settings, Printer, BarChart2, Users, Settings2, Trash2, Wifi, BellRing, Phone, 
   ShieldAlert, Send, Megaphone, Activity, LayoutGrid, Save, School, FileSpreadsheet, X, 
   Database, RefreshCw, Star, Newspaper, Plus, ClipboardCheck, UserCheck, CalendarDays, QrCode, Power, HardDrive, 
-  ArrowUpRight, ChevronRight, Zap, PenTool, Bot, Copy, UploadCloud
+  ArrowUpRight, ChevronRight, Zap, PenTool, Bot, Copy, UploadCloud, LogOut, CalendarCheck, Edit
 } from 'lucide-react';
 import { 
   getRequests, getStudents, getConsecutiveAbsences, resolveAbsenceAlert, getBehaviorRecords, 
@@ -15,9 +15,9 @@ import {
   clearAttendance, clearRequests, clearStudents, clearBehaviorRecords, clearAdminInsights, 
   clearReferrals, getTopStudents, addSchoolNews, getSchoolNews, deleteSchoolNews, generateExecutiveReport,
   getAvailableSlots, addAppointmentSlot, deleteAppointmentSlot, getDailyAppointments, checkInVisitor, getStaffUsers,
-  saveBotContext, getBotContext
+  saveBotContext, getBotContext, getExitPermissions, generateDefaultAppointmentSlots, updateSchoolNews, updateAppointmentSlot
 } from '../../services/storage';
-import { RequestStatus, ExcuseRequest, Student, BehaviorRecord, AttendanceRecord, SchoolNews, Appointment, AppointmentSlot, StaffUser } from '../../types';
+import { RequestStatus, ExcuseRequest, Student, BehaviorRecord, AttendanceRecord, SchoolNews, Appointment, AppointmentSlot, StaffUser, ExitPermission } from '../../types';
 
 // Declare XLSX
 declare var XLSX: any;
@@ -30,7 +30,7 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   
   // Navigation & View State
-  const [activeView, setActiveView] = useState<'overview' | 'behavior' | 'directives' | 'news' | 'settings'>('overview');
+  const [activeView, setActiveView] = useState<'overview' | 'behavior' | 'directives' | 'news' | 'settings' | 'appointments'>('overview');
   
   // Core Data
   const [requests, setRequests] = useState<ExcuseRequest[]>([]);
@@ -40,6 +40,19 @@ const Dashboard: React.FC = () => {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   
+  // Appointment & Exits Data
+  const [slots, setSlots] = useState<AppointmentSlot[]>([]);
+  const [exitLog, setExitLog] = useState<ExitPermission[]>([]);
+  const [apptDate, setApptDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isGeneratingSlots, setIsGeneratingSlots] = useState(false);
+  
+  // Manual Slot Modal State
+  const [showSlotModal, setShowSlotModal] = useState(false);
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+  const [newSlotStart, setNewSlotStart] = useState('');
+  const [newSlotEnd, setNewSlotEnd] = useState('');
+  const [newSlotCapacity, setNewSlotCapacity] = useState(5);
+
   // School Identity
   const [schoolName, setSchoolName] = useState(localStorage.getItem('school_name') || 'متوسطة عماد الدين زنكي');
   const [schoolLogo, setSchoolLogo] = useState(localStorage.getItem('school_logo') || 'https://www.raed.net/img?id=1471924');
@@ -71,7 +84,8 @@ const Dashboard: React.FC = () => {
   const [newNewsTitle, setNewNewsTitle] = useState('');
   const [newNewsContent, setNewNewsContent] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
-  const [isGeneratingNews, setIsGeneratingNews] = useState(false); // New AI State for News
+  const [isGeneratingNews, setIsGeneratingNews] = useState(false); 
+  const [editingNewsId, setEditingNewsId] = useState<string | null>(null); // New: Track editing ID
 
   // Visits
   const [todaysAppointments, setTodaysAppointments] = useState<Appointment[]>([]);
@@ -113,6 +127,92 @@ const Dashboard: React.FC = () => {
     };
     fetchData();
   }, []);
+
+  // Fetch Appointment Data when tab is active
+  useEffect(() => {
+      if (activeView === 'appointments') {
+          fetchAppointmentData();
+      }
+  }, [activeView, apptDate]);
+
+  const fetchAppointmentData = async () => {
+      const [s, e] = await Promise.all([
+          getAvailableSlots(apptDate),
+          getExitPermissions(apptDate)
+      ]);
+      setSlots(s);
+      setExitLog(e);
+  };
+
+  // --- APPOINTMENT HANDLERS ---
+  const handleGenerateSlots = async () => {
+      if (!window.confirm(`هل أنت متأكد من إنشاء المواعيد الافتراضية (7:30 - 12:00) ليوم ${apptDate}؟`)) return;
+      setIsGeneratingSlots(true);
+      try {
+          await generateDefaultAppointmentSlots(apptDate);
+          fetchAppointmentData();
+          alert("تم إنشاء المواعيد بنجاح!");
+      } catch (e) {
+          alert("حدث خطأ أو أن المواعيد موجودة بالفعل.");
+      } finally {
+          setIsGeneratingSlots(false);
+      }
+  };
+
+  const handleDeleteSlot = async (id: string) => {
+      if (!window.confirm("حذف هذا الموعد؟")) return;
+      await deleteAppointmentSlot(id);
+      setSlots(prev => prev.filter(s => s.id !== id));
+  };
+
+  const openAddSlotModal = () => {
+      setEditingSlotId(null);
+      setNewSlotStart('');
+      setNewSlotEnd('');
+      setNewSlotCapacity(5);
+      setShowSlotModal(true);
+  };
+
+  const openEditSlotModal = (slot: AppointmentSlot) => {
+      setEditingSlotId(slot.id);
+      setNewSlotStart(slot.startTime); // Ensure DB time format matches input type="time" (HH:mm)
+      setNewSlotEnd(slot.endTime);
+      setNewSlotCapacity(slot.maxCapacity);
+      setShowSlotModal(true);
+  };
+
+  const handleSaveManualSlot = async () => {
+      if (!newSlotStart || !newSlotEnd || newSlotCapacity <= 0) {
+          alert("يرجى تعبئة جميع الحقول بشكل صحيح");
+          return;
+      }
+
+      try {
+          if (editingSlotId) {
+              await updateAppointmentSlot({
+                  id: editingSlotId,
+                  date: apptDate,
+                  startTime: newSlotStart,
+                  endTime: newSlotEnd,
+                  maxCapacity: newSlotCapacity,
+                  currentBookings: 0 // Not updated here
+              });
+              alert("تم تعديل الموعد");
+          } else {
+              await addAppointmentSlot({
+                  date: apptDate,
+                  startTime: newSlotStart,
+                  endTime: newSlotEnd,
+                  maxCapacity: newSlotCapacity
+              });
+              alert("تم إضافة الموعد");
+          }
+          setShowSlotModal(false);
+          fetchAppointmentData();
+      } catch (e: any) {
+          alert("خطأ: " + e.message);
+      }
+  };
 
   // --- Search Logic ---
   const searchResults = useMemo(() => {
@@ -156,7 +256,8 @@ const Dashboard: React.FC = () => {
       return activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 10);
   }, [requests, behaviorRecords, attendanceRecords]);
 
-  // --- Handlers ---
+  // ... (Other handlers unchanged)
+  
   const handleGenerateBriefing = async () => {
       setIsGenerating(true);
       try {
@@ -249,8 +350,62 @@ const Dashboard: React.FC = () => {
       }
   };
 
-  const handleAddNews = async () => { if (!newNewsTitle || !newNewsContent) return; try { await addSchoolNews({ title: newNewsTitle, content: newNewsContent, author: 'الإدارة', isUrgent: isUrgent }); const updated = await getSchoolNews(); setNewsList(updated); setNewNewsTitle(''); setNewNewsContent(''); setIsUrgent(false); alert('تم النشر'); } catch (e) { alert('فشل النشر'); } };
-  const handleDeleteNews = async (id: string) => { if(!window.confirm('حذف الخبر؟')) return; try { await deleteSchoolNews(id); setNewsList(prev => prev.filter(n => n.id !== id)); } catch(e) { alert('فشل الحذف'); } };
+  const handleSaveNews = async () => {
+      if (!newNewsTitle || !newNewsContent) return;
+      try {
+          if (editingNewsId) {
+                await updateSchoolNews({
+                  id: editingNewsId,
+                  title: newNewsTitle,
+                  content: newNewsContent,
+                  author: 'الإدارة',
+                  isUrgent: isUrgent,
+                  createdAt: new Date().toISOString() // Placeholder
+              });
+              alert('تم تعديل الخبر بنجاح');
+          } else {
+              await addSchoolNews({
+                  title: newNewsTitle,
+                  content: newNewsContent,
+                  author: 'الإدارة',
+                  isUrgent: isUrgent
+              });
+              alert('تم نشر الخبر بنجاح');
+          }
+          
+          const updated = await getSchoolNews();
+          setNewsList(updated);
+          resetNewsForm();
+      } catch (e) {
+          alert('فشل العملية');
+      }
+  };
+
+  const handleDeleteNews = async (id: string) => { 
+      if(!window.confirm('حذف الخبر؟')) return; 
+      try { 
+          await deleteSchoolNews(id); 
+          setNewsList(prev => prev.filter(n => n.id !== id)); 
+      } catch(e) { 
+          alert('فشل الحذف'); 
+      } 
+  };
+
+  const handleEditNews = (news: SchoolNews) => {
+      setEditingNewsId(news.id);
+      setNewNewsTitle(news.title);
+      setNewNewsContent(news.content);
+      setIsUrgent(news.isUrgent);
+      // Scroll to top of the news form
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const resetNewsForm = () => {
+      setNewNewsTitle('');
+      setNewNewsContent('');
+      setIsUrgent(false);
+      setEditingNewsId(null);
+  };
 
   // --- BOT CONTEXT HANDLER ---
   const handleSaveBotContext = async () => {
@@ -381,7 +536,6 @@ const Dashboard: React.FC = () => {
                   onChange={(e) => setGlobalSearch(e.target.value)}
                   className="w-full pr-12 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all font-bold text-slate-700"
               />
-              
               {/* Search Results Dropdown */}
               {globalSearch && searchResults && (
                   <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-30 animate-fade-in-up">
@@ -407,9 +561,6 @@ const Dashboard: React.FC = () => {
                               ))}
                           </div>
                       )}
-                      {searchResults.students.length === 0 && searchResults.requests.length === 0 && searchResults.staff.length === 0 && (
-                          <div className="p-4 text-center text-slate-400 text-sm">لا توجد نتائج مطابقة</div>
-                      )}
                   </div>
               )}
           </div>
@@ -429,6 +580,7 @@ const Dashboard: React.FC = () => {
           {[
               { id: 'overview', label: 'نظرة عامة', icon: Activity },
               { id: 'behavior', label: 'السلوك والمخالفات', icon: ShieldAlert },
+              { id: 'appointments', label: 'المواعيد والاستئذان', icon: CalendarCheck },
               { id: 'directives', label: 'التوجيهات', icon: BrainCircuit },
               { id: 'news', label: 'الأخبار', icon: Newspaper },
           ].map(tab => (
@@ -450,10 +602,7 @@ const Dashboard: React.FC = () => {
       {/* VIEW: OVERVIEW */}
       {activeView === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
-              
-              {/* LEFT COLUMN (2/3): MAIN STATS & CHARTS */}
               <div className="lg:col-span-2 space-y-6">
-                  
                   {/* AI BRIEFING CARD */}
                   <div className="bg-gradient-to-r from-indigo-900 to-purple-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-5 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
@@ -534,9 +683,8 @@ const Dashboard: React.FC = () => {
                   </div>
               </div>
 
-              {/* RIGHT COLUMN (1/3): FEED & QUICK ACTIONS */}
+              {/* RIGHT COLUMN */}
               <div className="lg:col-span-1 space-y-6">
-                  
                   {/* QUICK ACTIONS GRID */}
                   <div className="grid grid-cols-2 gap-3">
                       <button onClick={() => navigate('/admin/requests')} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all text-center flex flex-col items-center justify-center gap-2 h-28">
@@ -580,7 +728,91 @@ const Dashboard: React.FC = () => {
                           )}
                       </div>
                   </div>
+              </div>
+          </div>
+      )}
 
+      {/* VIEW: APPOINTMENTS & EXITS */}
+      {activeView === 'appointments' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+              {/* Left Column: Exits Log */}
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[700px]">
+                  <div className="p-6 bg-orange-50 border-b border-orange-100 flex justify-between items-center">
+                      <h3 className="font-bold text-orange-900 flex items-center gap-2"><LogOut size={20}/> سجل استئذان الطلاب</h3>
+                      <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} className="bg-white border border-orange-200 rounded-lg px-2 py-1 text-sm font-bold outline-none" />
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                      {exitLog.length === 0 ? (
+                          <div className="text-center py-20 text-slate-400">لا يوجد سجلات خروج لهذا اليوم</div>
+                      ) : (
+                          <div className="space-y-3">
+                              {exitLog.map((exit, i) => (
+                                  <div key={i} className="bg-white border border-slate-100 p-4 rounded-2xl flex justify-between items-center hover:shadow-sm transition-shadow">
+                                      <div>
+                                          <p className="font-bold text-slate-800">{exit.studentName}</p>
+                                          <p className="text-xs text-slate-500">{exit.grade} - {exit.className}</p>
+                                          <div className="flex items-center gap-2 mt-1">
+                                              <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">المصرح: {exit.createdByName || '-'}</span>
+                                              <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-600">المستلم: {exit.parentName}</span>
+                                          </div>
+                                      </div>
+                                      <div className="text-right">
+                                          <span className={`text-xs font-bold px-2 py-1 rounded ${exit.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
+                                              {exit.status === 'completed' ? 'تم الخروج' : 'انتظار'}
+                                          </span>
+                                          <p className="text-xs font-mono text-slate-400 mt-1">{new Date(exit.createdAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'})}</p>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+              </div>
+
+              {/* Right Column: Appointment Settings */}
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[700px]">
+                  <div className="p-6 bg-blue-50 border-b border-blue-100 flex justify-between items-center">
+                      <h3 className="font-bold text-blue-900 flex items-center gap-2"><CalendarCheck size={20}/> إدارة المواعيد</h3>
+                      <div className="flex gap-2">
+                          <button 
+                            onClick={openAddSlotModal} 
+                            className="bg-white border border-blue-200 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-100 flex items-center gap-1 shadow-sm"
+                          >
+                              <Plus size={12}/> إضافة موعد
+                          </button>
+                          <button 
+                            onClick={handleGenerateSlots} 
+                            disabled={isGeneratingSlots}
+                            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-1 shadow-sm"
+                          >
+                              {isGeneratingSlots ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>}
+                              توليد القالب الافتراضي
+                          </button>
+                      </div>
+                  </div>
+                  <div className="p-4 bg-slate-50 border-b border-slate-100 text-xs text-slate-500">
+                      يتم توليد المواعيد من 7:30 ص إلى 12:00 م (كل 30 دقيقة) للتاريخ المحدد، أو يمكنك إضافة مواعيد يدوياً.
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                      {slots.length === 0 ? (
+                          <div className="text-center py-20 text-slate-400">لا توجد مواعيد متاحة لهذا اليوم.<br/>اضغط "توليد القالب" أو "إضافة موعد".</div>
+                      ) : (
+                          <div className="grid grid-cols-2 gap-3">
+                              {slots.map((slot) => (
+                                  <div key={slot.id} className="border border-slate-200 p-3 rounded-xl flex justify-between items-center bg-white hover:border-blue-300 transition-colors">
+                                      <div>
+                                          <p className="font-bold text-slate-800 text-sm font-mono">{slot.startTime} - {slot.endTime}</p>
+                                          <p className="text-xs text-slate-500">حجوزات: {slot.currentBookings} / {slot.maxCapacity}</p>
+                                      </div>
+                                      <div className="flex gap-1">
+                                          <button onClick={() => openEditSlotModal(slot)} className="text-slate-300 hover:text-blue-500 p-1"><Edit size={16}/></button>
+                                          <button onClick={() => handleDeleteSlot(slot.id)} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={16}/></button>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+                  </div>
               </div>
           </div>
       )}
@@ -589,7 +821,6 @@ const Dashboard: React.FC = () => {
       {activeView === 'behavior' && (
           <div className="space-y-6 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* ... Existing Charts from previous code ... */}
                   <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-y-auto h-[500px]">
                       <h3 className="font-bold text-slate-800 mb-4">سجل المخالفات الأخير</h3>
                       <div className="space-y-3">
@@ -626,18 +857,17 @@ const Dashboard: React.FC = () => {
           </div>
       )}
 
-      {/* VIEW: DIRECTIVES (AI) */}
+      {/* VIEW: DIRECTIVES */}
       {activeView === 'directives' && (
           <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
                   <h2 className="text-2xl font-bold mb-4 flex items-center gap-2 text-purple-900"><BrainCircuit /> التوجيه الإداري الذكي</h2>
-                  <p className="text-slate-500 mb-6 text-sm">استخدم الذكاء الاصطناعي لصياغة توجيهات مهنية ومحفزة وإرسالها للطاقم الإداري والتعليمي.</p>
                   
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
                       <textarea 
                           value={directiveContent} 
                           onChange={e => setDirectiveContent(e.target.value)} 
-                          placeholder="اكتب الفكرة هنا (مثلاً: حث الموجه على متابعة المتأخرين) ثم اضغط توليد..."
+                          placeholder="اكتب الفكرة هنا..."
                           className="w-full bg-transparent text-slate-800 placeholder:text-slate-400 outline-none text-sm min-h-[120px]"
                       ></textarea>
                       <div className="flex flex-col md:flex-row justify-between items-center mt-2 border-t border-slate-200 pt-3 gap-3">
@@ -651,7 +881,6 @@ const Dashboard: React.FC = () => {
                           </div>
                       </div>
                   </div>
-                  
                   <button onClick={handleSendDirective} disabled={sendingDirective || !directiveContent} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg">
                       {sendingDirective ? <Loader2 className="animate-spin"/> : <Send size={18}/>} إرسال التوجيه
                   </button>
@@ -659,143 +888,240 @@ const Dashboard: React.FC = () => {
           </div>
       )}
 
-      {/* VIEW: NEWS CMS */}
+      {/* VIEW: NEWS */}
       {activeView === 'news' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
-              <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 h-fit">
-                  <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><Plus className="text-pink-600"/> إضافة خبر جديد</h3>
-                  <div className="space-y-4">
-                      <input value={newNewsTitle} onChange={e => setNewNewsTitle(e.target.value)} placeholder="عنوان الخبر" className="w-full p-3 border rounded-xl bg-slate-50 text-sm font-bold outline-none focus:ring-2 focus:ring-pink-100" />
-                      
-                      <div className="relative">
-                          <textarea value={newNewsContent} onChange={e => setNewNewsContent(e.target.value)} placeholder="تفاصيل الخبر أو رؤوس أقلام..." className="w-full p-3 border rounded-xl bg-slate-50 text-sm outline-none focus:ring-2 focus:ring-pink-100 min-h-[120px] pb-10" />
-                          <button 
-                            onClick={handleGenerateNewsDraft} 
-                            disabled={isGeneratingNews}
-                            className="absolute bottom-2 left-2 text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg border border-indigo-100 font-bold flex items-center gap-1 hover:bg-indigo-100 transition-colors"
-                            title="صياغة آلية للخبر"
-                          >
-                              {isGeneratingNews ? <Loader2 className="animate-spin" size={12}/> : <Sparkles size={12}/>} صياغة بالذكاء الاصطناعي
-                          </button>
-                      </div>
+        <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
+          {/* Add News Form */}
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                  <Megaphone className="text-pink-600" /> {editingNewsId ? 'تعديل الخبر' : 'نشر خبر جديد'}
+                </h2>
+                {editingNewsId && (
+                    <button onClick={resetNewsForm} className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg font-bold hover:bg-slate-200">
+                        إلغاء التعديل
+                    </button>
+                )}
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">عنوان الخبر</label>
+                <input 
+                  value={newNewsTitle}
+                  onChange={(e) => setNewNewsTitle(e.target.value)}
+                  className="w-full p-3 border rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-pink-100 outline-none"
+                  placeholder="مثال: موعد اختبارات منتصف الفصل..."
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">نص الخبر</label>
+                <div className="relative">
+                  <textarea 
+                    value={newNewsContent}
+                    onChange={(e) => setNewNewsContent(e.target.value)}
+                    className="w-full p-3 border rounded-xl text-sm min-h-[120px] focus:ring-2 focus:ring-pink-100 outline-none resize-y"
+                    placeholder="التفاصيل..."
+                  ></textarea>
+                  <button 
+                    onClick={handleGenerateNewsDraft}
+                    disabled={isGeneratingNews}
+                    className="absolute bottom-3 left-3 text-xs bg-pink-50 text-pink-700 px-3 py-1.5 rounded-lg border border-pink-100 flex items-center gap-1 hover:bg-pink-100"
+                  >
+                    {isGeneratingNews ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} صياغة ذكية
+                  </button>
+                </div>
+              </div>
 
-                      <label className="flex items-center gap-2 text-sm font-bold text-slate-600 cursor-pointer bg-slate-50 p-3 rounded-xl border">
-                          <input type="checkbox" checked={isUrgent} onChange={e => setIsUrgent(e.target.checked)} className="w-4 h-4 text-pink-600" />
-                          خبر عاجل / هام جداً
-                      </label>
-                      <button onClick={handleAddNews} className="w-full bg-pink-600 text-white py-3 rounded-xl font-bold hover:bg-pink-700 transition-colors">نشر الخبر</button>
-                  </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" 
+                  id="urgent" 
+                  checked={isUrgent} 
+                  onChange={(e) => setIsUrgent(e.target.checked)}
+                  className="w-5 h-5 accent-red-500 rounded cursor-pointer"
+                />
+                <label htmlFor="urgent" className="text-sm font-bold text-slate-700 cursor-pointer">خبر عاجل (إشعار أحمر)</label>
               </div>
-              <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {newsList.length === 0 ? <p className="col-span-full text-center text-slate-400 py-10">لا توجد أخبار منشورة.</p> : 
-                    newsList.map(n => (
-                        <div key={n.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative group hover:shadow-md transition-all">
-                            <button onClick={() => handleDeleteNews(n.id)} className="absolute top-2 left-2 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
-                            {n.isUrgent && <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-1 rounded mb-2 inline-block">هام وعاجل</span>}
-                            <h4 className="font-bold text-slate-900 mb-2">{n.title}</h4>
-                            <p className="text-sm text-slate-600 line-clamp-3 mb-3">{n.content}</p>
-                            <div className="flex justify-between items-center text-[10px] text-slate-400 border-t pt-2">
-                                <span>{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
-                                <span>{n.author}</span>
-                            </div>
-                        </div>
-                    ))
-                  }
-              </div>
+
+              <button 
+                onClick={handleSaveNews}
+                disabled={!newNewsTitle || !newNewsContent}
+                className={`w-full text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 ${editingNewsId ? 'bg-blue-900 hover:bg-blue-800' : 'bg-slate-900 hover:bg-slate-800'}`}
+              >
+                {editingNewsId ? <><Edit size={18}/> حفظ التعديلات</> : <><Send size={18}/> نشر الخبر</>}
+              </button>
+            </div>
           </div>
+
+          {/* News List */}
+          <div className="space-y-4">
+            <h3 className="font-bold text-slate-500 text-sm uppercase">الأخبار المنشورة ({newsList.length})</h3>
+            {newsList.length === 0 ? (
+              <div className="text-center py-10 text-slate-400">لا يوجد أخبار منشورة.</div>
+            ) : (
+              newsList.map(item => (
+                <div key={item.id} className={`bg-white p-5 rounded-2xl border shadow-sm flex justify-between items-start ${item.isUrgent ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-blue-500'}`}>
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="font-bold text-slate-900 text-lg">{item.title}</h4>
+                      {item.isUrgent && <span className="bg-red-100 text-red-600 text-[10px] px-2 py-0.5 rounded font-bold">عاجل</span>}
+                    </div>
+                    <p className="text-slate-600 text-sm whitespace-pre-line leading-relaxed">{item.content}</p>
+                    <span className="text-[10px] text-slate-400 mt-2 block">{new Date(item.createdAt).toLocaleDateString('ar-SA')} - {item.author}</span>
+                  </div>
+                  <div className="flex gap-1">
+                      <button onClick={() => handleEditNews(item)} className="text-slate-300 hover:text-blue-500 p-2"><Edit size={18}/></button>
+                      <button onClick={() => handleDeleteNews(item.id)} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={18}/></button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       )}
 
       {/* VIEW: SETTINGS */}
       {activeView === 'settings' && (
-          <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
-              {/* School Identity */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><School size={20}/> هوية المدرسة</h3>
-                  <div className="grid md:grid-cols-2 gap-4 mb-4">
-                      <div><label className="text-xs font-bold text-slate-500 mb-1 block">اسم المدرسة</label><input value={tempSchoolName} onChange={e=>setTempSchoolName(e.target.value)} className="w-full p-3 border rounded-xl font-bold bg-slate-50"/></div>
-                      <div><label className="text-xs font-bold text-slate-500 mb-1 block">رابط الشعار</label><input value={tempSchoolLogo} onChange={e=>setTempSchoolLogo(e.target.value)} className="w-full p-3 border rounded-xl font-mono text-xs bg-slate-50"/></div>
-                  </div>
-                  <button onClick={saveSchoolSettings} className="bg-slate-800 text-white px-6 py-2 rounded-xl font-bold text-sm">حفظ الإعدادات</button>
+        <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
+          
+          {/* Identity */}
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+            <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+              <School className="text-blue-600" /> هوية المدرسة
+            </h2>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">اسم المدرسة</label>
+                <input 
+                  value={tempSchoolName}
+                  onChange={(e) => setTempSchoolName(e.target.value)}
+                  className="w-full p-3 border rounded-xl"
+                />
               </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">رابط الشعار (URL)</label>
+                <input 
+                  value={tempSchoolLogo}
+                  onChange={(e) => setTempSchoolLogo(e.target.value)}
+                  className="w-full p-3 border rounded-xl dir-ltr text-left"
+                />
+              </div>
+            </div>
+            <div className="mt-4 text-right">
+              <button onClick={saveSchoolSettings} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-blue-700">حفظ الإعدادات</button>
+            </div>
+          </div>
 
-              {/* Bot Knowledge Base (New) */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-100 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-2 h-full bg-indigo-500"></div>
-                  <h3 className="font-bold text-lg text-indigo-900 mb-2 flex items-center gap-2"><Bot size={20}/> تدريب المساعد الذكي (قاعدة المعرفة)</h3>
-                  <p className="text-sm text-slate-500 mb-4">اكتب هنا المعلومات التي تريد للبوت معرفتها (مثل: أوقات الدوام، أسماء الإداريين، سياسة الجوال، مواعيد الاختبارات) ليجيب على أسئلة أولياء الأمور بدقة.</p>
+          {/* AI Knowledge Base */}
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <Bot className="text-purple-600" /> قاعدة معرفة البوت
+              </h2>
+              <div className="flex gap-2">
+                 <button onClick={() => insertTemplate('hours')} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded font-bold">أوقات الدوام</button>
+                 <button onClick={() => insertTemplate('exam')} className="text-xs bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded font-bold">جدول الاختبارات</button>
+              </div>
+            </div>
+            
+            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4 text-sm text-blue-800">
+              <p className="font-bold mb-1">تعليم المساعد الذكي:</p>
+              <p>قم بكتابة المعلومات الهامة هنا (أوقات الدوام، القوانين، الإعلانات) أو ارفع ملفات (PDF/Excel) ليتعلم منها البوت ويجيب على أسئلة المستخدمين بدقة.</p>
+            </div>
+
+            <textarea 
+              value={botContext}
+              onChange={(e) => setBotContext(e.target.value)}
+              className="w-full p-4 border border-slate-200 rounded-xl h-64 font-mono text-sm leading-relaxed mb-4 focus:ring-2 focus:ring-purple-100 outline-none"
+              placeholder="أدخل المعلومات هنا..."
+            ></textarea>
+
+            <div className="flex justify-between items-center">
+              <div className="relative">
+                 <input type="file" id="knowledge-upload" className="hidden" accept=".pdf,.xlsx,.xls,.txt" onChange={handleKnowledgeUpload} disabled={isProcessingFile}/>
+                 <label htmlFor="knowledge-upload" className={`flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-xl border cursor-pointer hover:bg-slate-50 ${isProcessingFile ? 'opacity-50' : 'text-slate-600'}`}>
+                    {isProcessingFile ? <Loader2 size={16} className="animate-spin"/> : <UploadCloud size={16}/>} 
+                    {isProcessingFile ? 'جاري التحليل...' : 'رفع ملف (PDF/Excel)'}
+                 </label>
+              </div>
+              <button 
+                onClick={handleSaveBotContext} 
+                disabled={savingContext}
+                className="bg-purple-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-purple-700 flex items-center gap-2 shadow-lg shadow-purple-600/20"
+              >
+                {savingContext ? <Loader2 size={16} className="animate-spin"/> : <Save size={16}/>} حفظ وتحديث البوت
+              </button>
+            </div>
+          </div>
+
+          {/* Danger Zone */}
+          <div className="bg-red-50 rounded-3xl p-6 border border-red-100">
+            <h2 className="text-xl font-bold text-red-800 mb-6 flex items-center gap-2">
+              <AlertTriangle /> منطقة الخطر
+            </h2>
+            <div className="grid md:grid-cols-2 gap-4">
+               <button onClick={() => setDeleteTarget('requests')} className="bg-white border border-red-200 text-red-600 p-4 rounded-xl font-bold hover:bg-red-100 text-right">
+                  حذف جميع طلبات الأعذار
+               </button>
+               <button onClick={() => setDeleteTarget('attendance')} className="bg-white border border-red-200 text-red-600 p-4 rounded-xl font-bold hover:bg-red-100 text-right">
+                  حذف سجل الحضور
+               </button>
+               <button onClick={() => setDeleteTarget('students')} className="bg-white border border-red-200 text-red-600 p-4 rounded-xl font-bold hover:bg-red-100 text-right">
+                  حذف جميع الطلاب
+               </button>
+               <button onClick={() => setDeleteTarget('all')} className="bg-red-600 text-white p-4 rounded-xl font-bold hover:bg-red-700 text-right shadow-lg shadow-red-600/20">
+                  تهيئة النظام بالكامل (حذف كل شيء)
+               </button>
+            </div>
+            
+            {deleteTarget && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                 <div className="bg-white p-6 rounded-2xl max-w-md w-full">
+                    <h3 className="text-xl font-bold text-red-600 mb-2">تأكيد الحذف</h3>
+                    <p className="text-slate-600 mb-6">هل أنت متأكد؟ لا يمكن التراجع عن هذه العملية.</p>
+                    <div className="flex gap-3">
+                       <button onClick={executeDelete} disabled={isDeleting} className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold">
+                          {isDeleting ? 'جاري الحذف...' : 'نعم، احذف'}
+                       </button>
+                       <button onClick={() => setDeleteTarget(null)} className="flex-1 bg-slate-100 text-slate-700 py-3 rounded-xl font-bold">إلغاء</button>
+                    </div>
+                 </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+      
+      {/* MANUAL SLOT MODAL */}
+      {showSlotModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-6">
+                      <h3 className="font-bold text-slate-900 text-lg">{editingSlotId ? 'تعديل موعد' : 'إضافة موعد جديد'}</h3>
+                      <button onClick={() => setShowSlotModal(false)} className="text-slate-400 hover:text-red-500"><X size={20}/></button>
+                  </div>
                   
-                  <div className="flex gap-2 mb-3 items-center flex-wrap">
-                      <span className="text-xs font-bold text-indigo-400 self-center">أدوات سريعة:</span>
-                      <button onClick={() => insertTemplate('exam')} className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg border border-indigo-100 font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1">
-                          <Calendar size={12}/> جدول الاختبارات
-                      </button>
-                      <button onClick={() => insertTemplate('hours')} className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg border border-indigo-100 font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1">
-                          <Clock size={12}/> أوقات الدوام
-                      </button>
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 block mb-1">وقت البدء</label>
+                          <input type="time" value={newSlotStart} onChange={e => setNewSlotStart(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-100 font-bold text-slate-800" />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 block mb-1">وقت النهاية</label>
+                          <input type="time" value={newSlotEnd} onChange={e => setNewSlotEnd(e.target.value)} className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-100 font-bold text-slate-800" />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 block mb-1">السعة القصوى (عدد الزوار)</label>
+                          <input type="number" min="1" value={newSlotCapacity} onChange={e => setNewSlotCapacity(parseInt(e.target.value))} className="w-full p-3 border rounded-xl bg-slate-50 outline-none focus:ring-2 focus:ring-blue-100 font-bold text-slate-800" />
+                      </div>
                       
-                      {/* File Upload Button */}
-                      <div className="relative">
-                          <input 
-                              type="file" 
-                              id="knowledge-upload" 
-                              className="hidden" 
-                              accept=".xlsx,.xls,.csv,.txt,.pdf"
-                              onChange={handleKnowledgeUpload}
-                              disabled={isProcessingFile}
-                          />
-                          <label htmlFor="knowledge-upload" className={`cursor-pointer text-xs bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg border border-emerald-100 font-bold hover:bg-emerald-100 transition-colors flex items-center gap-1 ${isProcessingFile ? 'opacity-50' : ''}`}>
-                              {isProcessingFile ? <Loader2 size={12} className="animate-spin"/> : <UploadCloud size={12}/>}
-                              استيراد (Excel/PDF/Txt)
-                          </label>
-                      </div>
-                  </div>
-
-                  <textarea 
-                    value={botContext} 
-                    onChange={e => setBotContext(e.target.value)} 
-                    className="w-full p-4 border border-indigo-100 rounded-xl bg-indigo-50/30 text-sm leading-relaxed focus:ring-2 focus:ring-indigo-200 outline-none min-h-[150px]"
-                    placeholder="اكتب هنا المعلومات العامة..."
-                  ></textarea>
-                  
-                  <div className="mt-4 flex justify-end gap-3">
-                      <button 
-                        onClick={() => {
-                            if(window.confirm('هل أنت متأكد من مسح كافة معلومات البوت؟')) {
-                                setBotContext('');
-                            }
-                        }}
-                        className="text-red-500 hover:bg-red-50 px-4 py-2 rounded-xl font-bold text-sm border border-red-200 flex items-center gap-2"
-                      >
-                          <Trash2 size={16}/> مسح المحتوى
-                      </button>
-                      <button 
-                        onClick={handleSaveBotContext} 
-                        disabled={savingContext}
-                        className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-indigo-700 flex items-center gap-2 shadow-lg shadow-indigo-600/20"
-                      >
-                          {savingContext ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} حفظ وتحديث البوت
+                      <button onClick={handleSaveManualSlot} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors mt-2">
+                          {editingSlotId ? 'حفظ التعديلات' : 'إضافة الموعد'}
                       </button>
                   </div>
-              </div>
-
-              {/* Data Management */}
-              <div className="bg-red-50 p-6 rounded-2xl border border-red-100">
-                  <h3 className="font-bold text-lg text-red-900 mb-4 flex items-center gap-2"><HardDrive size={20}/> إدارة البيانات (منطقة الخطر)</h3>
-                  <div className="flex flex-wrap gap-3">
-                      <button onClick={()=>setDeleteTarget('requests')} className="bg-white text-red-700 border border-red-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-100">حذف جميع الطلبات</button>
-                      <button onClick={()=>setDeleteTarget('attendance')} className="bg-white text-red-700 border border-red-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-100">حذف سجل الحضور</button>
-                      <button onClick={()=>setDeleteTarget('all')} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700 shadow-md flex items-center gap-2"><Power size={16}/> تهيئة النظام بالكامل (عام جديد)</button>
-                  </div>
-                  
-                  {deleteTarget && (
-                      <div className="mt-4 p-4 bg-white rounded-xl border border-red-200 animate-fade-in">
-                          <p className="font-bold text-red-600 mb-2">تأكيد الحذف: {deleteTarget === 'all' ? 'جميع البيانات' : deleteTarget}</p>
-                          <div className="flex gap-2">
-                              <button onClick={executeDelete} disabled={isDeleting} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold text-sm">{isDeleting ? 'جاري الحذف...' : 'نعم، احذف نهائياً'}</button>
-                              <button onClick={()=>setDeleteTarget(null)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm">إلغاء</button>
-                          </div>
-                      </div>
-                  )}
               </div>
           </div>
       )}

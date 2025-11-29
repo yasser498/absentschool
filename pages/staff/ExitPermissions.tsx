@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { LogOut, Plus, Search, Calendar, User, Phone, CheckCircle, Clock, XCircle, Printer } from 'lucide-react';
+import { LogOut, Plus, Search, Calendar, User, Phone, CheckCircle, Clock, XCircle, Printer, X } from 'lucide-react';
 import { getStudents, addExitPermission, getExitPermissions } from '../../services/storage';
 import { Student, StaffUser, ExitPermission } from '../../types';
 import { GRADES } from '../../constants';
@@ -11,6 +11,9 @@ const ExitPermissions: React.FC = () => {
   const [permissions, setPermissions] = useState<ExitPermission[]>([]);
   const [loading, setLoading] = useState(true);
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // School Name for Print
+  const SCHOOL_NAME = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
 
   // Form State
   const [showModal, setShowModal] = useState(false);
@@ -74,7 +77,7 @@ const ExitPermissions: React.FC = () => {
         parentPhone,
         reason,
         createdBy: currentUser.id,
-        createdByName: currentUser.name // Add name here
+        createdByName: currentUser.name // Ensure name is passed
       });
       alert('تم تسجيل إذن الاستئذان بنجاح. سيظهر الآن في بوابة الأمن.');
       setShowModal(false);
@@ -101,36 +104,68 @@ const ExitPermissions: React.FC = () => {
         }
       `}</style>
 
-      {/* PRINT VIEW */}
+      {/* OFFICIAL PRINT VIEW */}
       <div id="exit-report-print" className="hidden" dir="rtl">
-          <div className="text-center mb-8 border-b-2 border-black pb-4">
-              <h1 className="text-2xl font-bold">تقرير استئذان الطلاب اليومي</h1>
-              <p className="text-lg">التاريخ: {reportDate}</p>
+          <div className="flex items-center justify-between px-4 mb-6 border-b-2 border-black pb-4">
+            <div className="text-right font-bold text-sm space-y-1">
+              <p>المملكة العربية السعودية</p>
+              <p>وزارة التعليم</p>
+              <p>إدارة التعليم ....................</p>
+              <p>{SCHOOL_NAME}</p>
+            </div>
+            <div className="flex justify-center">
+              <img src="https://www.raed.net/img?id=1474173" alt="شعار الوزارة" className="h-24 w-auto object-contain" />
+            </div>
+            <div className="text-left font-bold text-sm space-y-1">
+               <p>Ministry of Education</p>
+               <p>Student Exit Log</p>
+               <p>Date: {reportDate}</p>
+            </div>
           </div>
+
+          <div className="text-center mb-6">
+              <h1 className="text-2xl font-extrabold underline underline-offset-8">بيان استئذان الطلاب اليومي</h1>
+          </div>
+
           <table className="w-full text-right border-collapse border border-black text-sm">
               <thead>
                   <tr className="bg-gray-100">
-                      <th className="border border-black p-2">الطالب</th>
-                      <th className="border border-black p-2">ولي الأمر</th>
+                      <th className="border border-black p-2 w-10">م</th>
+                      <th className="border border-black p-2">اسم الطالب</th>
+                      <th className="border border-black p-2">الصف / الفصل</th>
+                      <th className="border border-black p-2">ولي الأمر (المستلم)</th>
+                      <th className="border border-black p-2">سبب الاستئذان</th>
                       <th className="border border-black p-2">المصرح (الموظف)</th>
-                      <th className="border border-black p-2">وقت الطلب</th>
                       <th className="border border-black p-2">وقت الخروج</th>
-                      <th className="border border-black p-2">الحالة</th>
                   </tr>
               </thead>
               <tbody>
-                  {filteredPermissions.map((p, idx) => (
-                      <tr key={idx}>
-                          <td className="border border-black p-2">{p.studentName}<br/><span className="text-[10px]">{p.grade} - {p.className}</span></td>
-                          <td className="border border-black p-2">{p.parentName}</td>
-                          <td className="border border-black p-2">{p.createdByName || '-'}</td>
-                          <td className="border border-black p-2">{new Date(p.createdAt).toLocaleTimeString('ar-SA')}</td>
-                          <td className="border border-black p-2">{p.completedAt ? new Date(p.completedAt).toLocaleTimeString('ar-SA') : '-'}</td>
-                          <td className="border border-black p-2">{p.status === 'completed' ? 'تم الخروج' : 'انتظار'}</td>
-                      </tr>
-                  ))}
+                  {filteredPermissions.length > 0 ? (
+                      filteredPermissions.map((p, idx) => (
+                          <tr key={idx}>
+                              <td className="border border-black p-2 text-center">{idx + 1}</td>
+                              <td className="border border-black p-2 font-bold">{p.studentName}</td>
+                              <td className="border border-black p-2">{p.grade} - {p.className}</td>
+                              <td className="border border-black p-2">{p.parentName}</td>
+                              <td className="border border-black p-2">{p.reason}</td>
+                              <td className="border border-black p-2">{p.createdByName || '-'}</td>
+                              <td className="border border-black p-2 text-center">
+                                  {p.status === 'completed' && p.completedAt 
+                                    ? new Date(p.completedAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}) 
+                                    : 'انتظار'}
+                              </td>
+                          </tr>
+                      ))
+                  ) : (
+                      <tr><td colSpan={7} className="border border-black p-4 text-center">لا يوجد استئذان اليوم</td></tr>
+                  )}
               </tbody>
           </table>
+
+          <div className="mt-16 flex justify-between px-12 text-lg">
+              <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>.............................</p></div>
+              <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
+          </div>
       </div>
 
       {/* APP VIEW */}
@@ -197,7 +232,10 @@ const ExitPermissions: React.FC = () => {
         {showModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                 <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-fade-in-up">
-                    <h2 className="text-xl font-bold mb-6 text-slate-800">تسجيل استئذان جديد</h2>
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-xl font-bold text-slate-800">تسجيل استئذان جديد</h2>
+                        <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-red-500"><X size={20}/></button>
+                    </div>
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                             <div>

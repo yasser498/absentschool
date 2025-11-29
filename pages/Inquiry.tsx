@@ -5,7 +5,7 @@ import {
   Search, User, School, Copy, Check, CalendarDays, AlertCircle, Loader2, 
   FileText, ShieldAlert, Star, MessageSquare, Send, CheckCircle, Clock, Plus, Users, Bell, 
   LogOut, ChevronRight, ArrowLeft, Activity, ChevronLeft, Archive, AlertTriangle, 
-  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer, LogOut as ExitIcon
+  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer, LogOut as ExitIcon, Calendar
 } from 'lucide-react';
 import { 
   getStudentByCivilId, getRequestsByStudentId, getStudentAttendanceHistory, 
@@ -35,6 +35,7 @@ const Inquiry: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDigitalId, setShowDigitalId] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
+  const [selectedNews, setSelectedNews] = useState<SchoolNews | null>(null); // New State for News Modal
   
   // Tabs
   const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'attendance' | 'archive' | 'behavior' | 'observations' | 'visits' | 'exits'>('overview');
@@ -45,7 +46,7 @@ const Inquiry: React.FC = () => {
   const [behaviorHistory, setBehaviorHistory] = useState<BehaviorRecord[]>([]);
   const [observations, setObservations] = useState<StudentObservation[]>([]);
   const [points, setPoints] = useState<{total: number, history: StudentPoint[]}>({ total: 0, history: [] });
-  const [exitPermissions, setExitPermissions] = useState<ExitPermission[]>([]); // New
+  const [exitPermissions, setExitPermissions] = useState<ExitPermission[]>([]);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [newChildId, setNewChildId] = useState('');
@@ -122,7 +123,7 @@ const Inquiry: React.FC = () => {
               getStudentPoints(student.studentId),
               getAvailableSlots(),
               getMyAppointments(parentCivilId),
-              getMyExitPermissions([student.studentId]) // New
+              getMyExitPermissions([student.studentId])
           ]);
           setHistory(reqs);
           setAttendanceHistory(att);
@@ -192,9 +193,30 @@ const Inquiry: React.FC = () => {
 
         <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
             
-            {/* NEWS */}
+            {/* NEWS SECTION */}
             {news.length > 0 && !selectedStudent && (
-                <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden p-4 relative animate-fade-in"><div className="flex items-center gap-2 mb-3"><span className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider animate-pulse">هام</span><h3 className="font-bold text-slate-800 flex items-center gap-2"><Newspaper size={16} className="text-blue-500"/> أخبار المدرسة</h3></div><div className="space-y-3">{news.slice(0, 3).map(n => (<div key={n.id} className={`p-3 rounded-xl border-l-4 ${n.isUrgent ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}`}><h4 className="font-bold text-sm text-slate-900">{n.title}</h4><p className="text-xs text-slate-600 mt-1 line-clamp-2">{n.content}</p><div className="mt-2 text-[10px] text-slate-400 flex justify-between"><span>{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span><span>بواسطة: {n.author}</span></div></div>))}</div></div>
+                <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden p-4 relative animate-fade-in">
+                    <div className="flex items-center gap-2 mb-3">
+                        <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider animate-pulse">هام</span>
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2"><Newspaper size={16} className="text-blue-500"/> أخبار المدرسة</h3>
+                    </div>
+                    <div className="space-y-3">
+                        {news.slice(0, 3).map(n => (
+                            <div 
+                                key={n.id} 
+                                onClick={() => setSelectedNews(n)}
+                                className={`p-3 rounded-xl border-l-4 cursor-pointer hover:bg-slate-50 transition-all ${n.isUrgent ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}`}
+                            >
+                                <h4 className="font-bold text-sm text-slate-900">{n.title}</h4>
+                                <p className="text-xs text-slate-600 mt-1 line-clamp-2">{n.content}</p>
+                                <div className="mt-2 text-[10px] text-slate-400 flex justify-between items-center">
+                                    <span>{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
+                                    <span className="text-blue-600 font-bold underline">اقرأ التفاصيل</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
             )}
 
             {/* Children List */}
@@ -296,8 +318,6 @@ const Inquiry: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* ... (Existing Tabs: Attendance, Archive, Behavior, etc.) ... */}
-                            {/* Copy existing tab contents here (shortened for brevity as logic didn't change) */}
                             {activeTab === 'archive' && (
                                 <div className="space-y-4 animate-fade-in">
                                     {history.length === 0 ? (
@@ -508,6 +528,37 @@ const Inquiry: React.FC = () => {
                 </div>
             )}
         </div>
+
+        {/* NEWS DETAILS MODAL */}
+        {selectedNews && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in" onClick={() => setSelectedNews(null)}>
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                    <div className={`p-6 text-white flex justify-between items-start shrink-0 ${selectedNews.isUrgent ? 'bg-red-600' : 'bg-blue-900'}`}>
+                        <div>
+                            <span className="inline-block px-3 py-1 rounded bg-white/20 text-[10px] font-bold mb-3 backdrop-blur-sm">
+                                {selectedNews.isUrgent ? 'خبر عاجل' : 'خبر مدرسي'}
+                            </span>
+                            <h2 className="text-xl font-bold leading-tight">{selectedNews.title}</h2>
+                            <div className="flex items-center gap-4 mt-4 text-xs text-white/90 font-medium">
+                                <span className="flex items-center gap-1"><Calendar size={14}/> {new Date(selectedNews.createdAt).toLocaleDateString('ar-SA')}</span>
+                                {selectedNews.author && <span className="flex items-center gap-1"><User size={14}/> {selectedNews.author}</span>}
+                            </div>
+                        </div>
+                        <button onClick={() => setSelectedNews(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors"><X size={24}/></button>
+                    </div>
+                    <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50/50">
+                        <div className="prose prose-lg text-slate-800 leading-loose whitespace-pre-line font-medium text-base">
+                            {selectedNews.content}
+                        </div>
+                    </div>
+                    <div className="p-4 border-t border-slate-100 bg-white flex justify-end">
+                        <button onClick={() => setSelectedNews(null)} className="px-8 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors w-full md:w-auto">
+                            إغلاق
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
 
         {/* SUCCESS BOOKING MODAL */}
         {showBookingModal && bookingSuccess && (

@@ -314,14 +314,16 @@ const mapSessionToDB = (s: GuidanceSession) => ({ student_id: s.studentId, stude
 
 // --- APPOINTMENT SYSTEM ---
 
-export const getAvailableSlots = async () => {
-    const today = new Date().toISOString().split('T')[0];
-    const { data, error } = await supabase
-        .from('appointment_slots')
-        .select('*')
-        .gte('date', today)
-        .order('date', { ascending: true })
-        .order('start_time', { ascending: true });
+export const getAvailableSlots = async (date?: string) => {
+    let query = supabase.from('appointment_slots').select('*');
+    if (date) query = query.eq('date', date);
+    else {
+        // If no date, get future slots
+        const today = new Date().toISOString().split('T')[0];
+        query = query.gte('date', today);
+    }
+        
+    const { data, error } = await query.order('date', { ascending: true }).order('start_time', { ascending: true });
         
     if (error) return [];
     return data.map((s: any) => ({
@@ -334,6 +336,36 @@ export const getAvailableSlots = async () => {
     }));
 };
 
+export const generateDefaultAppointmentSlots = async (date: string) => {
+    const slots = [];
+    const startHour = 7;
+    const startMinute = 30;
+    const endHour = 12;
+    
+    // Generate slots every 30 mins from 7:30 to 12:00
+    let current = new Date(`${date}T${startHour.toString().padStart(2,'0')}:${startMinute.toString().padStart(2,'0')}:00`);
+    const end = new Date(`${date}T${endHour.toString().padStart(2,'0')}:00:00`);
+
+    while (current < end) {
+        const startTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'});
+        
+        // Add 30 mins
+        current.setMinutes(current.getMinutes() + 30);
+        const endTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'});
+        
+        slots.push({
+            date: date,
+            start_time: startTime,
+            end_time: endTime,
+            max_capacity: 5,
+            current_bookings: 0
+        });
+    }
+
+    const { error } = await supabase.from('appointment_slots').insert(slots);
+    if (error) throw new Error(error.message);
+};
+
 export const addAppointmentSlot = async (slot: Omit<AppointmentSlot, 'id' | 'currentBookings'>) => {
     const { error } = await supabase.from('appointment_slots').insert({
         date: slot.date,
@@ -341,6 +373,15 @@ export const addAppointmentSlot = async (slot: Omit<AppointmentSlot, 'id' | 'cur
         end_time: slot.endTime,
         max_capacity: slot.maxCapacity
     });
+    if (error) throw new Error(error.message);
+};
+
+export const updateAppointmentSlot = async (slot: AppointmentSlot) => {
+    const { error } = await supabase.from('appointment_slots').update({
+        start_time: slot.startTime,
+        end_time: slot.endTime,
+        max_capacity: slot.maxCapacity
+    }).eq('id', slot.id);
     if (error) throw new Error(error.message);
 };
 
@@ -482,6 +523,15 @@ export const addSchoolNews = async (news: Omit<SchoolNews, 'id' | 'createdAt'>) 
         author: news.author,
         is_urgent: news.isUrgent
     });
+    if (error) throw new Error(error.message);
+};
+
+export const updateSchoolNews = async (news: SchoolNews) => {
+    const { error } = await supabase.from('news').update({
+        title: news.title,
+        content: news.content,
+        is_urgent: news.isUrgent
+    }).eq('id', news.id);
     if (error) throw new Error(error.message);
 };
 
@@ -825,7 +875,7 @@ export const addExitPermission = async (perm: Omit<ExitPermission, 'id' | 'statu
         parent_phone: perm.parentPhone,
         reason: perm.reason,
         created_by: perm.createdBy,
-        created_by_name: perm.createdByName, // Save new field
+        created_by_name: perm.createdByName, // Ensure this field is sent
         status: 'pending_pickup'
     });
     if (error) throw new Error(error.message);

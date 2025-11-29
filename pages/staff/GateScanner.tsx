@@ -4,7 +4,7 @@ import {
   QrCode, CheckCircle, AlertCircle, Loader2, User, Clock, RefreshCw, XCircle, 
   Printer, List, ShieldCheck, FileText, LayoutGrid, Sparkles, BrainCircuit, 
   Calendar, ArrowRight, Bell, LogOut, Home, X, Camera, History, LogOut as ExitIcon, 
-  Grid, UserCheck, Search, Filter 
+  Grid, UserCheck, Search, Filter, ScanLine 
 } from 'lucide-react';
 import { 
   checkInVisitor, getDailyAppointments, generateSmartContent, getExitPermissions, 
@@ -26,7 +26,6 @@ const GateScanner: React.FC = () => {
   const [todaysVisits, setTodaysVisits] = useState<Appointment[]>([]);
   const [todaysExits, setTodaysExits] = useState<ExitPermission[]>([]);
   const [loadingData, setLoadingData] = useState(false);
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
   // --- Scanner State ---
   const [scanResult, setScanResult] = useState<string | null>(null);
@@ -75,7 +74,6 @@ const GateScanner: React.FC = () => {
           ]);
           setTodaysVisits(visits);
           setTodaysExits(exits);
-          setLastRefreshed(new Date());
       } catch (e) {
           console.error("Failed to fetch gate data", e);
       } finally {
@@ -85,7 +83,6 @@ const GateScanner: React.FC = () => {
 
   useEffect(() => {
     fetchDailyData();
-    // Poll every 30 seconds
     const interval = setInterval(fetchDailyData, 30000);
     return () => clearInterval(interval);
   }, [reportDate]);
@@ -95,11 +92,8 @@ const GateScanner: React.FC = () => {
       if (activeTab !== 'scanner') return;
       if (isScannerRunning.current) return;
 
-      // Reset error
       setScanError(null);
-
-      // Small delay to ensure DOM is ready
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 100)); // DOM wait
       
       if (!document.getElementById('reader')) return;
 
@@ -107,30 +101,29 @@ const GateScanner: React.FC = () => {
           const html5QrCode = new Html5Qrcode("reader");
           scannerRef.current = html5QrCode;
 
+          const config = {
+              fps: 15, // Higher FPS for faster scanning
+              qrbox: { width: 280, height: 280 }, // Defined square scanning region
+              aspectRatio: 1.0,
+              focusMode: "continuous" 
+          };
+
           await html5QrCode.start(
               { facingMode: "environment" },
-              {
-                  fps: 10,
-                  qrbox: { width: 250, height: 250 },
-                  aspectRatio: 1.0
-              },
+              config,
               (decodedText: string) => {
                   if (!isProcessingScan.current) {
                       handleScan(decodedText);
                   }
               },
-              (errorMessage: string) => { /* ignore errors */ }
+              (errorMessage: string) => { /* ignore */ }
           );
           isScannerRunning.current = true;
       } catch (err: any) {
           console.error("Camera error:", err);
           let msg = "تعذر تشغيل الكاميرا.";
           if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
-                msg = "تم رفض إذن الكاميرا. يرجى السماح بالوصول من إعدادات المتصفح (أعلى الصفحة) ثم إعادة المحاولة.";
-          } else if (err?.name === "NotFoundError") {
-                msg = "لم يتم العثور على كاميرا في الجهاز.";
-          } else if (err?.name === "NotReadableError") {
-                msg = "الكاميرا قيد الاستخدام من قبل تطبيق آخر.";
+                msg = "تم رفض إذن الكاميرا. يرجى السماح بالوصول من إعدادات المتصفح.";
           }
           setScanError(msg);
           isScannerRunning.current = false;
@@ -155,10 +148,7 @@ const GateScanner: React.FC = () => {
     } else {
         stopScanner();
     }
-
-    return () => {
-        stopScanner();
-    };
+    return () => { stopScanner(); };
   }, [activeTab]);
 
   const handleScan = async (decodedText: string) => {
@@ -172,21 +162,17 @@ const GateScanner: React.FC = () => {
       setIsAlreadyProcessed(false);
 
       try {
-          // 1. Is it an Exit Permission? (Format: EXIT:uuid or just uuid if legacy, but let's assume EXIT: prefix for strictness or just lookup ID)
+          // 1. Exit Permission Check
           let exitId = decodedText;
           if (decodedText.startsWith('EXIT:')) {
               exitId = decodedText.split(':')[1];
           }
 
-          // Try to find in local Exits first
           let foundExit = todaysExits.find(e => e.id === exitId);
-          
-          // If not found locally, try DB (maybe it's fresh)
           if (!foundExit) {
               const freshExit = await getExitPermissionById(exitId);
               if (freshExit) {
                   foundExit = freshExit;
-                  // Update local state gently
                   setTodaysExits(prev => [...prev, freshExit]); 
               }
           }
@@ -200,8 +186,8 @@ const GateScanner: React.FC = () => {
               return;
           }
 
-          // 2. Is it a Visitor Appointment?
-          let visitId = decodedText; // Appointment IDs are UUIDs
+          // 2. Visitor Appointment Check
+          let visitId = decodedText;
           const foundVisit = todaysVisits.find(v => v.id === visitId);
           
           if (foundVisit) {
@@ -229,12 +215,10 @@ const GateScanner: React.FC = () => {
           if (scannedExit) {
               await completeExitPermission(scannedExit.id);
               setScanSuccessType('exit');
-              // Update local state immediately
               setTodaysExits(prev => prev.map(e => e.id === scannedExit.id ? { ...e, status: 'completed', completedAt: new Date().toISOString() } : e));
           } else if (scannedAppointment) {
               await checkInVisitor(scannedAppointment.id);
               setScanSuccessType('checkin');
-              // Update local state immediately
               setTodaysVisits(prev => prev.map(v => v.id === scannedAppointment.id ? { ...v, status: 'completed', arrivedAt: new Date().toISOString() } : v));
           }
       } catch (e) {
@@ -253,92 +237,45 @@ const GateScanner: React.FC = () => {
       setIsAlreadyProcessed(false);
       isProcessingScan.current = false;
       
-      // If camera stopped due to error, try restart
-      if (!isScannerRunning.current) {
-          startScanner();
-      }
+      if (!isScannerRunning.current) startScanner();
   };
 
-  // --- Manual Actions (Tabs) ---
   const handleManualExit = async (id: string) => {
-      if (!window.confirm("هل أنت متأكد من تسجيل خروج الطالب؟")) return;
-      try {
-          await completeExitPermission(id);
-          fetchDailyData();
-      } catch (e) { alert("حدث خطأ"); }
+      if (!window.confirm("تأكيد خروج الطالب؟")) return;
+      await completeExitPermission(id);
+      fetchDailyData();
   };
 
   const handleManualCheckIn = async (id: string) => {
-      if (!window.confirm("هل أنت متأكد من تسجيل دخول الزائر؟")) return;
-      try {
-          await checkInVisitor(id);
-          fetchDailyData();
-      } catch (e) { alert("حدث خطأ"); }
+      if (!window.confirm("تأكيد دخول الزائر؟")) return;
+      await checkInVisitor(id);
+      fetchDailyData();
   };
 
-  // --- Smart Report ---
+  // --- Reports & Utils ---
   const generateReport = async () => {
       setIsAnalyzing(true);
       setShowSmartReport(true);
       try {
-          const exitSummary = todaysExits.map(e => `${e.studentName} (${e.status})`).join(', ');
-          const visitSummary = todaysVisits.map(v => `${v.parentName} (${v.status})`).join(', ');
-          
-          const prompt = `
-            حلل حركة البوابة اليومية للمدرسة (تاريخ ${reportDate}):
-            - خروج الطلاب: ${stats.exitsCompleted} من أصل ${stats.exitsTotal}.
-            - دخول الزوار: ${stats.visitsCompleted} من أصل ${stats.visitsTotal}.
-            
-            تفاصيل الطلاب: ${exitSummary}
-            تفاصيل الزوار: ${visitSummary}
-            
-            اكتب تقريراً أمنياً مختصراً لإدارة المدرسة يلخص الحركة ويسلط الضوء على أي ازدحام أو ملاحظات.
-          `;
+          const prompt = `حلل حركة البوابة اليوم ${reportDate}. خروج: ${stats.exitsCompleted}/${stats.exitsTotal}. زوار: ${stats.visitsCompleted}/${stats.visitsTotal}. اكتب ملخصاً.`;
           const res = await generateSmartContent(prompt);
           setAiReport(res);
-      } catch (e) {
-          setAiReport("تعذر توليد التقرير.");
-      } finally {
-          setIsAnalyzing(false);
-      }
+      } catch (e) { setAiReport("تعذر التوليد."); } finally { setIsAnalyzing(false); }
   };
 
-  // --- Print Handler ---
   const handlePrint = (mode: 'exits' | 'visitors') => {
       setPrintMode(mode);
-      setTimeout(() => {
-          window.print();
-          // Reset after print dialog closes (approximate)
-          setTimeout(() => setPrintMode('none'), 1000);
-      }, 300);
+      setTimeout(() => { window.print(); setTimeout(() => setPrintMode('none'), 1000); }, 300);
   };
 
-  // --- Helper to determine visitor status text for report ---
   const getVisitorReportStatus = (v: Appointment) => {
       if (v.status === 'completed') return 'حضر';
-      
-      const now = new Date();
-      // If looking at a past date, and not completed, they missed it
-      const reportDateObj = new Date(reportDate);
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      reportDateObj.setHours(0,0,0,0);
-
-      const isPastDate = reportDateObj < today;
-      const isPast1PM = now.getHours() >= 13; // 1:00 PM
-      
-      if (isPastDate || isPast1PM) return 'لم يحضر';
-      return 'انتظار';
+      const isPast = new Date(reportDate) < new Date(new Date().setHours(0,0,0,0));
+      return isPast || new Date().getHours() >= 13 ? 'لم يحضر' : 'انتظار';
   };
 
-  // --- Filtered Lists ---
-  const filteredExits = todaysExits.filter(e => 
-      e.studentName.includes(searchTerm) || e.grade.includes(searchTerm)
-  );
-  
-  const filteredVisits = todaysVisits.filter(v => 
-      v.parentName.includes(searchTerm) || v.studentName.includes(searchTerm)
-  );
+  const filteredExits = todaysExits.filter(e => e.studentName.includes(searchTerm) || e.grade.includes(searchTerm));
+  const filteredVisits = todaysVisits.filter(v => v.parentName.includes(searchTerm) || v.studentName.includes(searchTerm));
 
   return (
     <>
@@ -349,540 +286,284 @@ const GateScanner: React.FC = () => {
             #gate-report { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; background: white; z-index: 9999; }
             .no-print { display: none !important; }
         }
+        @keyframes scan-move {
+            0% { top: 0; opacity: 0; }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+        .animate-scan { animation: scan-move 2s linear infinite; }
     `}</style>
 
     {/* --- OFFICIAL PRINT TEMPLATES --- */}
     <div id="gate-report" className="hidden" dir="rtl">
-        {/* Header */}
+        {/* Same Print Header as before */}
         <div className="flex items-center justify-between border-b-2 border-black pb-4 mb-6">
-            <div className="text-right font-bold text-sm space-y-1">
-                <p>المملكة العربية السعودية</p>
-                <p>وزارة التعليم</p>
-                <p>{SCHOOL_NAME}</p>
-                <p>إدارة الأمن والسلامة</p>
-            </div>
-            <div className="text-center">
-                <img src={REPORT_LOGO} alt="Logo" className="h-24 w-auto object-contain mx-auto"/>
-            </div>
-            <div className="text-left font-bold text-sm space-y-1">
-                <p>Ministry of Education</p>
-                <p>Security Gate Report</p>
-                <p>Date: {reportDate}</p>
-            </div>
+            <div className="text-right font-bold text-sm space-y-1"><p>المملكة العربية السعودية</p><p>وزارة التعليم</p><p>{SCHOOL_NAME}</p></div>
+            <div className="text-center"><img src={REPORT_LOGO} alt="Logo" className="h-24 w-auto object-contain mx-auto"/></div>
+            <div className="text-left font-bold text-sm space-y-1"><p>Security Report</p><p>Date: {reportDate}</p></div>
         </div>
-
-        {/* Exits Report Content */}
+        {/* Exits Table */}
         {printMode === 'exits' && (
-            <>
-                <h1 className="text-2xl font-extrabold text-center mb-6 underline underline-offset-8">بيان خروج الطلاب اليومي (استئذان)</h1>
-                <table className="w-full text-right border-collapse border border-black text-sm">
-                    <thead>
-                        <tr className="bg-gray-100">
-                            <th className="border border-black p-2 w-10 text-center">م</th>
-                            <th className="border border-black p-2">اسم الطالب</th>
-                            <th className="border border-black p-2">الصف / الفصل</th>
-                            <th className="border border-black p-2">المستلم (ولي الأمر)</th>
-                            <th className="border border-black p-2">السبب</th>
-                            <th className="border border-black p-2 bg-gray-200">المصرح (المصدر)</th>
-                            <th className="border border-black p-2 text-center">وقت الخروج</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {todaysExits.length > 0 ? (
-                            todaysExits.map((e, idx) => (
-                                <tr key={idx}>
-                                    <td className="border border-black p-2 text-center">{idx + 1}</td>
-                                    <td className="border border-black p-2 font-bold">{e.studentName}</td>
-                                    <td className="border border-black p-2">{e.grade} - {e.className}</td>
-                                    <td className="border border-black p-2">{e.parentName}</td>
-                                    <td className="border border-black p-2">{e.reason}</td>
-                                    <td className="border border-black p-2 font-bold">{e.createdByName || '-'}</td>
-                                    <td className="border border-black p-2 text-center font-mono">
-                                        {e.completedAt ? new Date(e.completedAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}) : 'لم يخرج'}
-                                    </td>
-                                </tr>
-                            ))
-                        ) : (
-                            <tr><td colSpan={7} className="border border-black p-4 text-center">لا يوجد حالات خروج لهذا اليوم</td></tr>
-                        )}
-                    </tbody>
-                </table>
-            </>
+            <table className="w-full text-right border-collapse border border-black text-sm">
+                <thead><tr className="bg-gray-100"><th className="border border-black p-2">الطالب</th><th className="border border-black p-2">المستلم</th><th className="border border-black p-2">السبب</th><th className="border border-black p-2">المصرح</th><th className="border border-black p-2">الوقت</th></tr></thead>
+                <tbody>{todaysExits.length > 0 ? todaysExits.map((e, i) => (<tr key={i}><td className="border border-black p-2">{e.studentName}</td><td className="border border-black p-2">{e.parentName}</td><td className="border border-black p-2">{e.reason}</td><td className="border border-black p-2">{e.createdByName}</td><td className="border border-black p-2">{e.completedAt ? new Date(e.completedAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}) : '-'}</td></tr>)) : <tr><td colSpan={5} className="p-4 text-center">لا يوجد</td></tr>}</tbody>
+            </table>
         )}
-
-        {/* Visitors Report Content */}
+        {/* Visitors Table */}
         {printMode === 'visitors' && (
-            <>
-                <h1 className="text-2xl font-extrabold text-center mb-6 underline underline-offset-8">سجل الزوار اليومي</h1>
-                <table className="w-full text-right border-collapse border border-black text-sm">
-                    <thead>
-                        <tr className="bg-gray-100">
-                            <th className="border border-black p-2 w-10 text-center">م</th>
-                            <th className="border border-black p-2">اسم الزائر</th>
-                            <th className="border border-black p-2">ولي أمر الطالب</th>
-                            <th className="border border-black p-2">سبب الزيارة</th>
-                            <th className="border border-black p-2 text-center">وقت الموعد</th>
-                            <th className="border border-black p-2 text-center">وقت الحضور</th>
-                            <th className="border border-black p-2 text-center">الحالة</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {todaysVisits.length > 0 ? (
-                            todaysVisits.map((v, idx) => {
-                                const statusText = getVisitorReportStatus(v);
-                                return (
-                                <tr key={idx}>
-                                    <td className="border border-black p-2 text-center">{idx + 1}</td>
-                                    <td className="border border-black p-2 font-bold">{v.parentName}</td>
-                                    <td className="border border-black p-2">{v.studentName}</td>
-                                    <td className="border border-black p-2">{v.visitReason}</td>
-                                    <td className="border border-black p-2 text-center font-mono">{v.slot?.startTime}</td>
-                                    <td className="border border-black p-2 text-center font-mono">
-                                        {v.arrivedAt ? new Date(v.arrivedAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}) : '-'}
-                                    </td>
-                                    <td className="border border-black p-2 text-center font-bold">
-                                        {statusText}
-                                    </td>
-                                </tr>
-                            )})
-                        ) : (
-                            <tr><td colSpan={7} className="border border-black p-4 text-center">لا يوجد زوار لهذا اليوم</td></tr>
-                        )}
-                    </tbody>
-                </table>
-            </>
+            <table className="w-full text-right border-collapse border border-black text-sm">
+                <thead><tr className="bg-gray-100"><th className="border border-black p-2">الزائر</th><th className="border border-black p-2">الطالب</th><th className="border border-black p-2">الموعد</th><th className="border border-black p-2">الحضور</th><th className="border border-black p-2">الحالة</th></tr></thead>
+                <tbody>{todaysVisits.length > 0 ? todaysVisits.map((v, i) => (<tr key={i}><td className="border border-black p-2">{v.parentName}</td><td className="border border-black p-2">{v.studentName}</td><td className="border border-black p-2">{v.slot?.startTime}</td><td className="border border-black p-2">{v.arrivedAt ? new Date(v.arrivedAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}) : '-'}</td><td className="border border-black p-2">{getVisitorReportStatus(v)}</td></tr>)) : <tr><td colSpan={5} className="p-4 text-center">لا يوجد</td></tr>}</tbody>
+            </table>
         )}
-
-        {/* Footer */}
-        <div className="mt-16 flex justify-between px-12 text-lg">
-            <div className="text-center"><p className="font-bold mb-8">مشرف الأمن</p><p>.............................</p></div>
-            <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
-        </div>
-        <div className="mt-8 text-center text-[10px] border-t border-black pt-2">
-            تم استخراج التقرير آلياً من نظام الأمن الذكي - {new Date().toLocaleTimeString('ar-SA')}
-        </div>
     </div>
 
     <div className="max-w-7xl mx-auto space-y-6 pb-24 no-print animate-fade-in">
         
-        {/* HEADER & STATS (SQUARES LAYOUT) */}
+        {/* DASHBOARD STATS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center gap-2 aspect-square hover:border-orange-200 transition-colors">
-                <div className="bg-orange-50 p-4 rounded-full text-orange-600 mb-1">
-                    <Clock size={28}/>
-                </div>
-                <h3 className="text-3xl font-extrabold text-slate-800">{stats.exitsPending}</h3>
-                <p className="text-slate-400 text-xs font-bold uppercase">طلاب الانتظار</p>
+            <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-2 aspect-square">
+                <div className="bg-orange-50 p-3 rounded-full text-orange-600"><Clock size={24}/></div>
+                <h3 className="text-2xl font-extrabold">{stats.exitsPending}</h3><p className="text-xs text-slate-400 font-bold uppercase">انتظار</p>
             </div>
-
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center gap-2 aspect-square hover:border-emerald-200 transition-colors">
-                <div className="bg-emerald-50 p-4 rounded-full text-emerald-600 mb-1">
-                    <LogOut size={28}/>
-                </div>
-                <h3 className="text-3xl font-extrabold text-slate-800">{stats.exitsCompleted}</h3>
-                <p className="text-slate-400 text-xs font-bold uppercase">تم الخروج</p>
+            <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-2 aspect-square">
+                <div className="bg-emerald-50 p-3 rounded-full text-emerald-600"><LogOut size={24}/></div>
+                <h3 className="text-2xl font-extrabold">{stats.exitsCompleted}</h3><p className="text-xs text-slate-400 font-bold uppercase">مغادر</p>
             </div>
-
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center gap-2 aspect-square hover:border-blue-200 transition-colors">
-                <div className="bg-blue-50 p-4 rounded-full text-blue-600 mb-1">
-                    <UserCheck size={28}/>
-                </div>
-                <h3 className="text-3xl font-extrabold text-slate-800">{stats.visitsCompleted}/{stats.visitsTotal}</h3>
-                <p className="text-slate-400 text-xs font-bold uppercase">زوار اليوم</p>
+            <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-2 aspect-square">
+                <div className="bg-blue-50 p-3 rounded-full text-blue-600"><UserCheck size={24}/></div>
+                <h3 className="text-2xl font-extrabold">{stats.visitsCompleted}</h3><p className="text-xs text-slate-400 font-bold uppercase">زوار</p>
             </div>
-
-            <div 
-                onClick={generateReport}
-                className="bg-purple-50 p-6 rounded-3xl shadow-sm border border-purple-100 flex flex-col items-center justify-center text-center gap-2 aspect-square cursor-pointer hover:bg-purple-100 transition-colors group"
-            >
-                <div className="bg-white p-4 rounded-full text-purple-600 mb-1 shadow-sm group-hover:scale-110 transition-transform">
-                    <Sparkles size={28}/>
-                </div>
-                <h3 className="text-lg font-bold text-purple-900">التقرير الذكي</h3>
-                <p className="text-purple-400 text-xs font-bold uppercase">تحليل فوري</p>
+            <div onClick={generateReport} className="bg-purple-50 p-4 rounded-3xl shadow-sm border border-purple-100 flex flex-col items-center justify-center gap-2 aspect-square cursor-pointer hover:bg-purple-100 transition-colors">
+                <div className="bg-white p-3 rounded-full text-purple-600"><Sparkles size={24}/></div>
+                <h3 className="text-lg font-bold text-purple-900">تقرير</h3><p className="text-[10px] text-purple-400 font-bold">ذكاء اصطناعي</p>
             </div>
         </div>
 
-        {/* AI REPORT OVERLAY */}
         {showSmartReport && (
-            <div className="bg-purple-50 border border-purple-200 rounded-2xl p-6 relative animate-fade-in shadow-sm">
-                <button onClick={() => setShowSmartReport(false)} className="absolute top-4 left-4 text-purple-400 hover:text-purple-700"><X size={20}/></button>
-                <h3 className="font-bold text-purple-900 mb-4 flex items-center gap-2"><BrainCircuit size={20}/> تقرير الأمن الذكي</h3>
-                {isAnalyzing ? (
-                    <div className="flex items-center gap-2 text-purple-600 font-bold"><Loader2 className="animate-spin"/> جاري تحليل البيانات...</div>
-                ) : (
-                    <p className="text-sm text-purple-800 leading-relaxed whitespace-pre-line">{aiReport}</p>
-                )}
+            <div className="bg-purple-50 border border-purple-200 rounded-2xl p-6 relative animate-fade-in">
+                <button onClick={() => setShowSmartReport(false)} className="absolute top-4 left-4 text-purple-400"><X size={20}/></button>
+                <h3 className="font-bold text-purple-900 mb-2 flex items-center gap-2"><BrainCircuit size={18}/> تحليل الأمن</h3>
+                {isAnalyzing ? <Loader2 className="animate-spin text-purple-600"/> : <p className="text-sm text-purple-800 leading-relaxed whitespace-pre-line">{aiReport}</p>}
             </div>
         )}
 
-        {/* NAVIGATION TABS */}
+        {/* TABS */}
         <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-100 flex overflow-x-auto">
-            <button 
-                onClick={() => setActiveTab('scanner')} 
-                className={`flex-1 py-3 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap ${activeTab === 'scanner' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-                <Camera size={18} /> الماسح الضوئي
-            </button>
-            <button 
-                onClick={() => setActiveTab('students')} 
-                className={`flex-1 py-3 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap ${activeTab === 'students' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-                <Grid size={18} /> طابور الطلاب ({stats.exitsPending})
-            </button>
-            <button 
-                onClick={() => setActiveTab('visitors')} 
-                className={`flex-1 py-3 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap ${activeTab === 'visitors' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-                <List size={18} /> سجل الزوار
-            </button>
+            <button onClick={() => setActiveTab('scanner')} className={`flex-1 py-3 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${activeTab === 'scanner' ? 'bg-slate-800 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}><Camera size={18} /> الماسح</button>
+            <button onClick={() => setActiveTab('students')} className={`flex-1 py-3 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${activeTab === 'students' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}><Grid size={18} /> خروج ({stats.exitsPending})</button>
+            <button onClick={() => setActiveTab('visitors')} className={`flex-1 py-3 px-6 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${activeTab === 'visitors' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}><List size={18} /> زوار</button>
         </div>
 
-        {/* ================= CONTENT: SCANNER ================= */}
+        {/* SCANNER VIEW */}
         {activeTab === 'scanner' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[500px]">
-                {/* Camera View */}
-                <div className="bg-black rounded-3xl overflow-hidden relative shadow-lg border-4 border-slate-800">
+            <div className="flex flex-col items-center">
+                {/* CAMERA CONTAINER */}
+                <div className="w-full max-w-md aspect-square bg-black rounded-3xl overflow-hidden relative shadow-2xl border-4 border-slate-900 group">
                     <div id="reader" className="w-full h-full object-cover"></div>
                     
-                    {!scanError && (
-                        <div className="absolute top-4 right-4 bg-red-600 text-white text-[10px] font-bold px-3 py-1 rounded-full animate-pulse flex items-center gap-1 z-10">
-                            <div className="w-2 h-2 bg-white rounded-full"></div> LIVE
-                        </div>
-                    )}
-
-                    {/* Scanner Errors Overlay */}
-                    {scanError && (
-                        <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center text-white p-6 text-center z-20">
-                            <AlertCircle size={48} className="text-red-500 mb-4"/>
-                            <h3 className="text-xl font-bold mb-2">تعذر الوصول للكاميرا</h3>
-                            <p className="text-slate-300 text-sm mb-6">{scanError}</p>
-                            <button onClick={startScanner} className="bg-white text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-200 transition-colors">
-                                <RefreshCw size={18}/> إعادة المحاولة
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Instructions Overlay */}
-                    {!scanResult && !scanError && (
-                        <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent text-white text-center pointer-events-none">
-                            <p className="font-bold text-lg mb-1">وجه الكاميرا نحو الرمز</p>
-                            <p className="text-sm opacity-80">يدعم بطاقات الطلاب ومواعيد الزوار</p>
-                        </div>
-                    )}
-                </div>
-
-                {/* Result Panel */}
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 flex flex-col justify-center items-center text-center relative overflow-hidden">
-                    {!scanResult ? (
-                        <div className="text-slate-300 flex flex-col items-center">
-                            <QrCode size={80} className="mb-4 opacity-50" />
-                            <p className="font-bold text-lg text-slate-400">بانتظار المسح...</p>
-                        </div>
-                    ) : (
-                        <div className="w-full max-w-md animate-fade-in-up z-10">
-                            {/* Loading State */}
-                            {scanLoading && <Loader2 size={48} className="text-blue-600 animate-spin mx-auto mb-4" />}
+                    {/* Visual Overlay (The Square) */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                        <div className="w-64 h-64 border-2 border-white/30 rounded-3xl relative">
+                            {/* Corners */}
+                            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-emerald-400 rounded-tl-2xl"></div>
+                            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-emerald-400 rounded-tr-2xl"></div>
+                            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-emerald-400 rounded-bl-2xl"></div>
+                            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-emerald-400 rounded-br-2xl"></div>
                             
-                            {/* Error State */}
-                            {scanError && (
-                                <div className="text-red-500 mb-6">
-                                    <XCircle size={64} className="mx-auto mb-2" />
-                                    <h3 className="text-xl font-bold">خطأ في المسح</h3>
-                                    <p className="text-sm mt-1">{scanError}</p>
-                                </div>
-                            )}
+                            {/* Scanning Animation */}
+                            {!scanResult && <div className="absolute left-0 right-0 h-1 bg-emerald-400/80 shadow-[0_0_20px_rgba(52,211,153,0.8)] animate-scan"></div>}
+                        </div>
+                    </div>
 
-                            {/* Already Processed State */}
-                            {isAlreadyProcessed && !scanError && (
-                                <div className="text-amber-500 mb-6">
-                                    <History size={64} className="mx-auto mb-2" />
-                                    <h3 className="text-xl font-bold">تمت العملية مسبقاً</h3>
-                                    <p className="text-sm mt-1 text-slate-500">
-                                        {scannedExit ? `تم خروج الطالب ${scannedExit.studentName}` : `تم دخول الزائر ${scannedAppointment?.parentName}`}
-                                    </p>
-                                    <p className="text-xs font-mono mt-1 text-slate-400">
-                                        {scannedExit?.completedAt ? new Date(scannedExit.completedAt).toLocaleTimeString('ar-SA') : scannedAppointment?.arrivedAt ? new Date(scannedAppointment.arrivedAt).toLocaleTimeString('ar-SA') : ''}
-                                    </p>
-                                </div>
-                            )}
+                    {/* Status Badge */}
+                    <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 z-20">
+                        <div className={`w-2 h-2 rounded-full ${scanError ? 'bg-red-500' : 'bg-emerald-500 animate-pulse'}`}></div>
+                        {scanError ? 'خطأ' : 'جاري المسح'}
+                    </div>
 
-                            {/* Success Action State */}
-                            {scanSuccessType && (
-                                <div className="text-emerald-500 mb-6">
-                                    <CheckCircle size={64} className="mx-auto mb-2" />
-                                    <h3 className="text-xl font-bold">{scanSuccessType === 'exit' ? 'تم تسجيل الخروج' : 'تم تسجيل الدخول'}</h3>
-                                    <p className="text-sm mt-1 text-slate-500">العملية ناجحة</p>
-                                </div>
-                            )}
-
-                            {/* Verification State (Ready to Confirm) */}
-                            {!scanLoading && !scanError && !isAlreadyProcessed && !scanSuccessType && (
-                                <>
-                                    {scannedExit && (
-                                        <div className="bg-orange-50 border border-orange-100 rounded-2xl p-6 mb-6">
-                                            <p className="text-xs font-bold text-orange-400 uppercase mb-2">إذن مغادرة طالب</p>
-                                            <h2 className="text-2xl font-bold text-slate-800 mb-1">{scannedExit.studentName}</h2>
-                                            <p className="text-sm text-slate-500 mb-4">{scannedExit.grade} - {scannedExit.className}</p>
-                                            
-                                            <div className="bg-white rounded-xl p-3 text-left space-y-2 border border-orange-100">
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-400">المستلم:</span>
-                                                    <span className="font-bold text-slate-700">{scannedExit.parentName}</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-400">المصرح:</span>
-                                                    <span className="font-bold text-slate-700">{scannedExit.createdByName}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {scannedAppointment && (
-                                        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6 mb-6">
-                                            <p className="text-xs font-bold text-blue-400 uppercase mb-2">موعد زيارة</p>
-                                            <h2 className="text-2xl font-bold text-slate-800 mb-1">{scannedAppointment.parentName}</h2>
-                                            <p className="text-sm text-slate-500 mb-4">ولي أمر الطالب: {scannedAppointment.studentName}</p>
-                                            
-                                            <div className="bg-white rounded-xl p-3 text-left space-y-2 border border-blue-100">
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-400">الوقت:</span>
-                                                    <span className="font-bold text-slate-700 font-mono">{scannedAppointment.slot?.startTime}</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-400">السبب:</span>
-                                                    <span className="font-bold text-slate-700">{scannedAppointment.visitReason}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <button 
-                                        onClick={confirmAction}
-                                        className={`w-full py-4 rounded-xl text-white font-bold text-lg shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2 ${scannedExit ? 'bg-orange-600 hover:bg-orange-700 shadow-orange-200' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-200'}`}
-                                    >
-                                        <CheckCircle size={20} />
-                                        {scannedExit ? 'تأكيد مغادرة الطالب' : 'تسجيل دخول الزائر'}
-                                    </button>
-                                </>
-                            )}
-
-                            {/* Reset Button */}
-                            <button 
-                                onClick={resetScanner} 
-                                className="mt-4 text-slate-400 font-bold text-sm hover:text-slate-600 flex items-center justify-center gap-2 w-full py-3"
-                            >
-                                <RefreshCw size={14} /> مسح رمز جديد
-                            </button>
+                    {/* Camera Error Message */}
+                    {scanError && (
+                        <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center text-white z-30 p-6 text-center">
+                            <AlertCircle size={48} className="text-red-500 mb-4"/>
+                            <p className="font-bold mb-4">{scanError}</p>
+                            <button onClick={startScanner} className="bg-white text-black px-6 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-200"><RefreshCw size={16}/> إعادة</button>
                         </div>
                     )}
                 </div>
+
+                {/* RESULT MODAL (FULL SCREEN OVERLAY) */}
+                {(scanResult || isAlreadyProcessed || scanSuccessType) && (
+                    <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+                        <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden relative">
+                            {/* Close Button */}
+                            {!scanLoading && (
+                                <button onClick={resetScanner} className="absolute top-4 left-4 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors z-10">
+                                    <X size={24} className="text-slate-600"/>
+                                </button>
+                            )}
+
+                            <div className="p-8 text-center">
+                                {/* Success State */}
+                                {scanSuccessType ? (
+                                    <div className="animate-fade-in-up">
+                                        <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                            <CheckCircle size={48} />
+                                        </div>
+                                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">
+                                            {scanSuccessType === 'exit' ? 'تم الخروج بنجاح' : 'تم الدخول بنجاح'}
+                                        </h2>
+                                        <p className="text-slate-500 font-bold">العملية مسجلة في النظام</p>
+                                        <button onClick={resetScanner} className="mt-8 w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-lg hover:bg-slate-800 transition-all">
+                                            مسح التالي
+                                        </button>
+                                    </div>
+                                ) : isAlreadyProcessed ? (
+                                    /* Already Processed State */
+                                    <div className="animate-fade-in-up">
+                                        <div className="w-24 h-24 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                            <History size={48} />
+                                        </div>
+                                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">تمت العملية مسبقاً</h2>
+                                        <p className="text-slate-500 font-bold mb-6">
+                                            {scannedExit ? `الطالب: ${scannedExit.studentName}` : `الزائر: ${scannedAppointment?.parentName}`}
+                                        </p>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 inline-block w-full">
+                                            <p className="text-xs text-slate-400 font-bold uppercase mb-1">وقت التنفيذ</p>
+                                            <p className="font-mono text-xl font-bold text-slate-800">
+                                                {scannedExit?.completedAt ? new Date(scannedExit.completedAt).toLocaleTimeString('ar-SA') : scannedAppointment?.arrivedAt ? new Date(scannedAppointment.arrivedAt).toLocaleTimeString('ar-SA') : '-'}
+                                            </p>
+                                        </div>
+                                        <button onClick={resetScanner} className="mt-8 w-full py-4 bg-slate-200 text-slate-700 rounded-2xl font-bold text-lg hover:bg-slate-300 transition-all">
+                                            عودة
+                                        </button>
+                                    </div>
+                                ) : scannedExit ? (
+                                    /* Exit Confirmation */
+                                    <div className="animate-fade-in-up">
+                                        <div className="bg-orange-50 border-2 border-orange-100 rounded-2xl p-6 mb-6">
+                                            <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-3 inline-block">إذن خروج طالب</span>
+                                            <h2 className="text-3xl font-extrabold text-slate-900 mb-1">{scannedExit.studentName}</h2>
+                                            <p className="text-lg text-slate-500">{scannedExit.grade} - {scannedExit.className}</p>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-4 text-right mb-8">
+                                            <div className="bg-slate-50 p-4 rounded-2xl">
+                                                <p className="text-xs text-slate-400 font-bold uppercase mb-1">المستلم (ولي الأمر)</p>
+                                                <p className="font-bold text-slate-800">{scannedExit.parentName}</p>
+                                            </div>
+                                            <div className="bg-slate-50 p-4 rounded-2xl">
+                                                <p className="text-xs text-slate-400 font-bold uppercase mb-1">المصرح (الموظف)</p>
+                                                <p className="font-bold text-slate-800">{scannedExit.createdByName}</p>
+                                            </div>
+                                        </div>
+
+                                        <button 
+                                            onClick={confirmAction}
+                                            disabled={scanLoading}
+                                            className="w-full py-5 bg-orange-600 text-white rounded-2xl font-bold text-xl hover:bg-orange-700 shadow-xl shadow-orange-200 transition-all flex items-center justify-center gap-3"
+                                        >
+                                            {scanLoading ? <Loader2 className="animate-spin"/> : <LogOut size={24}/>}
+                                            تأكيد المغادرة
+                                        </button>
+                                    </div>
+                                ) : scannedAppointment ? (
+                                    /* Visitor Confirmation */
+                                    <div className="animate-fade-in-up">
+                                        <div className="bg-blue-50 border-2 border-blue-100 rounded-2xl p-6 mb-6">
+                                            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-3 inline-block">موعد زيارة</span>
+                                            <h2 className="text-3xl font-extrabold text-slate-900 mb-1">{scannedAppointment.parentName}</h2>
+                                            <p className="text-lg text-slate-500">ولي أمر: {scannedAppointment.studentName}</p>
+                                        </div>
+                                        
+                                        <div className="bg-slate-50 p-4 rounded-2xl mb-8 text-right">
+                                            <div className="flex justify-between items-center border-b border-slate-200 pb-3 mb-3">
+                                                <span className="text-slate-400 text-sm font-bold">وقت الموعد</span>
+                                                <span className="font-mono text-xl font-bold text-slate-800">{scannedAppointment.slot?.startTime}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-slate-400 text-sm font-bold block mb-1">سبب الزيارة</span>
+                                                <span className="font-bold text-slate-800">{scannedAppointment.visitReason}</span>
+                                            </div>
+                                        </div>
+
+                                        <button 
+                                            onClick={confirmAction}
+                                            disabled={scanLoading}
+                                            className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold text-xl hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all flex items-center justify-center gap-3"
+                                        >
+                                            {scanLoading ? <Loader2 className="animate-spin"/> : <CheckCircle size={24}/>}
+                                            تسجيل الدخول
+                                        </button>
+                                    </div>
+                                ) : (
+                                    /* Not Found / Error inside modal */
+                                    <div className="py-10">
+                                        <XCircle size={64} className="text-red-500 mx-auto mb-4"/>
+                                        <h3 className="text-xl font-bold text-slate-800 mb-2">الرمز غير صالح</h3>
+                                        <p className="text-slate-500">{scanError || "لم يتم العثور على بيانات لهذا الرمز اليوم."}</p>
+                                        <button onClick={resetScanner} className="mt-8 px-8 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200">مسح مرة أخرى</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         )}
 
         {/* ================= CONTENT: STUDENTS QUEUE ================= */}
         {activeTab === 'students' && (
             <div className="space-y-6">
-                {/* Search Bar & Date Picker */}
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row gap-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20}/>
-                        <input 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="بحث في قائمة الخروج..."
-                            className="w-full pr-10 pl-4 py-2 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-orange-100"
-                        />
-                    </div>
-                    
-                    {/* Report Date Picker */}
-                    <div className="relative w-full md:w-auto">
-                        <input 
-                            type="date" 
-                            value={reportDate} 
-                            onChange={(e) => setReportDate(e.target.value)} 
-                            className="w-full md:w-auto pl-10 pr-4 py-2 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-orange-100 font-bold text-slate-600 cursor-pointer"
-                        />
-                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                    </div>
-
+                    <div className="relative flex-1"><Search className="absolute right-3 top-2.5 text-slate-400" size={20}/><input value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} placeholder="بحث..." className="w-full pr-10 pl-4 py-2 bg-slate-50 border-none rounded-xl outline-none"/></div>
                     <div className="flex gap-2">
-                        <button onClick={fetchDailyData} className="bg-slate-100 p-2 rounded-xl text-slate-500 hover:text-slate-800"><RefreshCw size={20}/></button>
-                        <button onClick={() => handlePrint('exits')} className="bg-slate-800 text-white p-2 rounded-xl flex items-center gap-2 px-4 font-bold text-sm hover:bg-slate-900"><Printer size={18}/> طباعة التقرير</button>
+                        <input type="date" value={reportDate} onChange={e=>setReportDate(e.target.value)} className="bg-slate-50 border-none rounded-xl px-4 py-2 font-bold text-slate-600 outline-none"/>
+                        <button onClick={()=>handlePrint('exits')} className="bg-slate-800 text-white px-4 rounded-xl flex items-center gap-2"><Printer size={18}/> طباعة</button>
                     </div>
                 </div>
 
-                {/* Queue Grid */}
-                <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2"><Clock size={20} className="text-orange-500"/> قيد الانتظار ({todaysExits.filter(e => e.status === 'pending_pickup').length})</h3>
-                
-                {filteredExits.filter(e => e.status === 'pending_pickup').length === 0 ? (
-                    <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-200 text-slate-400">
-                        <LogOut size={48} className="mx-auto mb-4 opacity-50"/>
-                        <p>لا يوجد طلاب في الانتظار حالياً</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filteredExits.filter(e => e.status === 'pending_pickup').map(e => (
-                            <div key={e.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden flex flex-col">
-                                <div className="p-5 flex justify-between items-start bg-gradient-to-br from-white to-orange-50/50">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-bold text-lg">
-                                            {e.studentName.charAt(0)}
-                                        </div>
-                                        <div>
-                                            <h4 className="font-bold text-slate-900 text-base">{e.studentName}</h4>
-                                            <p className="text-xs text-slate-500">{e.grade} - {e.className}</p>
-                                        </div>
-                                    </div>
-                                    <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-lg border border-orange-200">
-                                        انتظار
-                                    </span>
-                                </div>
-                                <div className="px-5 py-3 space-y-2 text-sm border-t border-slate-50 flex-1">
-                                    <div className="flex justify-between">
-                                        <span className="text-slate-400">المستلم:</span>
-                                        <span className="font-bold text-slate-700">{e.parentName}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-slate-400">المصرح:</span>
-                                        <span className="font-bold text-slate-700 bg-slate-100 px-2 rounded">{e.createdByName}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-slate-400">الوقت:</span>
-                                        <span className="font-mono text-slate-600">{new Date(e.createdAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'})}</span>
-                                    </div>
-                                </div>
-                                <div className="p-3 bg-slate-50 border-t border-slate-100">
-                                    <button 
-                                        onClick={() => handleManualExit(e.id)}
-                                        className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2.5 rounded-xl font-bold text-sm shadow-sm flex items-center justify-center gap-2"
-                                    >
-                                        <LogOut size={16}/> تأكيد المغادرة يدوياً
-                                    </button>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredExits.filter(e => e.status === 'pending_pickup').map(e => (
+                        <div key={e.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                            <div className="flex justify-between items-start mb-3">
+                                <div><h4 className="font-bold text-lg text-slate-900">{e.studentName}</h4><p className="text-xs text-slate-500">{e.grade} - {e.className}</p></div>
+                                <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded">انتظار</span>
+                            </div>
+                            <div className="space-y-2 text-sm text-slate-600 mb-4">
+                                <p><span className="text-slate-400">المستلم:</span> <strong>{e.parentName}</strong></p>
+                                <p><span className="text-slate-400">المصرح:</span> {e.createdByName}</p>
+                            </div>
+                            <button onClick={()=>handleManualExit(e.id)} className="w-full bg-orange-600 text-white py-2 rounded-xl font-bold text-sm hover:bg-orange-700 flex items-center justify-center gap-2"><LogOut size={16}/> تأكيد المغادرة</button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
+        {/* ================= CONTENT: VISITORS ================= */}
+        {activeTab === 'visitors' && (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b flex justify-between items-center">
+                    <h3 className="font-bold">سجل الزوار</h3>
+                    <div className="flex gap-2"><input type="date" value={reportDate} onChange={e=>setReportDate(e.target.value)} className="border p-1 rounded"/><button onClick={()=>handlePrint('visitors')}><Printer/></button></div>
+                </div>
+                {filteredVisits.length === 0 ? <p className="p-8 text-center text-slate-400">لا يوجد زوار</p> : (
+                    <div className="divide-y">
+                        {filteredVisits.map(v => (
+                            <div key={v.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
+                                <div><h4 className="font-bold">{v.parentName}</h4><p className="text-xs text-slate-500">ولي أمر: {v.studentName}</p></div>
+                                <div className="text-left">
+                                    <p className="font-mono font-bold text-slate-700">{v.slot?.startTime}</p>
+                                    {v.status === 'completed' ? <span className="text-emerald-600 text-xs font-bold">تم الدخول</span> : <button onClick={()=>handleManualCheckIn(v.id)} className="text-xs bg-blue-600 text-white px-3 py-1 rounded font-bold">دخول يدوي</button>}
                                 </div>
                             </div>
                         ))}
                     </div>
                 )}
-
-                {/* History List */}
-                <div className="mt-8">
-                    <h3 className="font-bold text-slate-500 text-sm uppercase mb-4 flex items-center gap-2"><CheckCircle size={16}/> تم المغادرة مؤخراً</h3>
-                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                        {filteredExits.filter(e => e.status === 'completed').length === 0 ? (
-                            <p className="p-6 text-center text-sm text-slate-400">السجل فارغ</p>
-                        ) : (
-                            <table className="w-full text-sm text-right">
-                                <thead className="bg-slate-50 text-slate-500 text-xs font-bold uppercase">
-                                    <tr>
-                                        <th className="p-3">الطالب</th>
-                                        <th className="p-3">المستلم</th>
-                                        <th className="p-3">وقت الخروج</th>
-                                        <th className="p-3">الحالة</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {filteredExits.filter(e => e.status === 'completed').slice(0, 10).map(e => (
-                                        <tr key={e.id} className="hover:bg-slate-50">
-                                            <td className="p-3 font-bold text-slate-800">{e.studentName}</td>
-                                            <td className="p-3 text-slate-600">{e.parentName}</td>
-                                            <td className="p-3 font-mono text-slate-500">{new Date(e.completedAt!).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'})}</td>
-                                            <td className="p-3"><span className="text-emerald-600 font-bold text-xs flex items-center gap-1"><CheckCircle size={12}/> مغادر</span></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-                </div>
             </div>
         )}
-
-        {/* ================= CONTENT: VISITOR LOG ================= */}
-        {activeTab === 'visitors' && (
-            <div className="space-y-6">
-                 {/* Search Bar & Date Picker */}
-                 <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row gap-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20}/>
-                        <input 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="بحث في سجل الزوار..."
-                            className="w-full pr-10 pl-4 py-2 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-blue-100"
-                        />
-                    </div>
-
-                    {/* Report Date Picker */}
-                    <div className="relative w-full md:w-auto">
-                        <input 
-                            type="date" 
-                            value={reportDate} 
-                            onChange={(e) => setReportDate(e.target.value)} 
-                            className="w-full md:w-auto pl-10 pr-4 py-2 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-blue-100 font-bold text-slate-600 cursor-pointer"
-                        />
-                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                    </div>
-
-                    <div className="flex gap-2">
-                        <button onClick={fetchDailyData} className="bg-slate-100 p-2 rounded-xl text-slate-500 hover:text-slate-800"><RefreshCw size={20}/></button>
-                        <button onClick={() => handlePrint('visitors')} className="bg-slate-800 text-white p-2 rounded-xl flex items-center gap-2 px-4 font-bold text-sm hover:bg-slate-900"><Printer size={18}/> طباعة التقرير</button>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2"><List size={20} className="text-blue-600"/> جدول الزيارات اليومي</h3>
-                        <span className="bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">{stats.visitsTotal} زائر</span>
-                    </div>
-                    
-                    {filteredVisits.length === 0 ? (
-                        <div className="p-20 text-center text-slate-400">
-                            <UserCheck size={48} className="mx-auto mb-4 opacity-50"/>
-                            <p>لا يوجد زيارات مسجلة لهذا اليوم.</p>
-                        </div>
-                    ) : (
-                        <div className="divide-y divide-slate-100">
-                            {filteredVisits.map(v => (
-                                <div key={v.id} className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 hover:bg-slate-50 transition-colors">
-                                    <div className="flex items-center gap-4 w-full md:w-auto">
-                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg border-2 ${v.status === 'completed' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-slate-50 border-slate-100 text-slate-500'}`}>
-                                            {v.parentName.charAt(0)}
-                                        </div>
-                                        <div>
-                                            <h4 className="font-bold text-slate-900">{v.parentName}</h4>
-                                            <p className="text-xs text-slate-500">ولي أمر الطالب: <strong>{v.studentName}</strong></p>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end">
-                                        <div className="text-right">
-                                            <p className="text-[10px] text-slate-400 uppercase font-bold">وقت الموعد</p>
-                                            <p className="font-mono font-bold text-slate-700">{v.slot?.startTime}</p>
-                                        </div>
-                                        
-                                        {v.status === 'completed' ? (
-                                            <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 border border-emerald-100">
-                                                <CheckCircle size={16}/> تم الدخول
-                                                <span className="text-[10px] opacity-70 font-mono">({new Date(v.arrivedAt!).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'})})</span>
-                                            </div>
-                                        ) : (
-                                            <button 
-                                                onClick={() => handleManualCheckIn(v.id)}
-                                                className="bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-700 shadow-sm shadow-blue-200 transition-colors flex items-center gap-2"
-                                            >
-                                                تسجيل دخول يدوي
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-        )}
-
     </div>
     </>
   );

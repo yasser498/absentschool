@@ -1,36 +1,32 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { QrCode, CheckCircle, AlertCircle, Loader2, User, Clock, RefreshCw, XCircle, Printer, List, ShieldCheck, FileText, LayoutGrid, Sparkles, BrainCircuit, Calendar, ArrowRight, Bell, LogOut, Home, X, Camera, History, LogOut as ExitIcon } from 'lucide-react';
-import { checkInVisitor, getDailyAppointments, generateSmartContent, getExitPermissions, completeExitPermission } from '../../services/storage';
+import { QrCode, CheckCircle, AlertCircle, Loader2, User, Clock, RefreshCw, XCircle, Printer, List, ShieldCheck, FileText, LayoutGrid, Sparkles, BrainCircuit, Calendar, ArrowRight, Bell, LogOut, Home, X, Camera, History, LogOut as ExitIcon, Grid } from 'lucide-react';
+import { checkInVisitor, getDailyAppointments, generateSmartContent, getExitPermissions, completeExitPermission, getExitPermissionById } from '../../services/storage';
 import { Appointment, ExitPermission } from '../../types';
 
 // Declare global Html5Qrcode
 declare var Html5Qrcode: any;
 
 const GateScanner: React.FC = () => {
-  // View State - Scanner is default and always active
+  // View State
   const [showLog, setShowLog] = useState(false);
-  const [showExitList, setShowExitList] = useState(false); // New: Show Exit Permissions
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [activeTab, setActiveTab] = useState<'scanner' | 'grid'>('scanner'); // NEW: Main Tabs
   
   const [scanResult, setScanResult] = useState<string | null>(null);
   const [scannedAppointment, setScannedAppointment] = useState<Appointment | null>(null);
-  const [scannedExit, setScannedExit] = useState<ExitPermission | null>(null); // New: Scanned Exit
+  const [scannedExit, setScannedExit] = useState<ExitPermission | null>(null); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkInSuccess, setCheckInSuccess] = useState(false);
-  const [exitSuccess, setExitSuccess] = useState(false); // New
+  const [exitSuccess, setExitSuccess] = useState(false); 
   const [isAlreadyCheckedIn, setIsAlreadyCheckedIn] = useState(false); 
   const [todaysVisits, setTodaysVisits] = useState<Appointment[]>([]);
-  const [todaysExits, setTodaysExits] = useState<ExitPermission[]>([]); // New
+  const [todaysExits, setTodaysExits] = useState<ExitPermission[]>([]); 
   
   // AI State
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  // School Identity
-  const SCHOOL_NAME = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
-  const SCHOOL_LOGO = "https://www.raed.net/img?id=1471924"; 
 
   const scannerRef = useRef<any>(null);
   const isScannerRunning = useRef<boolean>(false);
@@ -38,10 +34,15 @@ const GateScanner: React.FC = () => {
 
   // Stats
   const stats = useMemo(() => {
-      const total = todaysVisits.length;
-      const arrived = todaysVisits.filter(v => v.status === 'completed').length;
-      return { total, arrived, pending: total - arrived };
-  }, [todaysVisits]);
+      const exits = todaysExits.length;
+      const exitsPending = todaysExits.filter(e => e.status === 'pending_pickup').length;
+      const exitsCompleted = todaysExits.filter(e => e.status === 'completed').length;
+      
+      const visits = todaysVisits.length;
+      const visitsArrived = todaysVisits.filter(v => v.status === 'completed').length;
+      
+      return { exits, exitsPending, exitsCompleted, visits, visitsArrived };
+  }, [todaysExits, todaysVisits]);
 
   const fetchDailyData = async () => {
       const today = new Date().toISOString().split('T')[0];
@@ -63,6 +64,17 @@ const GateScanner: React.FC = () => {
   // --- SCANNER INITIALIZATION ---
   useEffect(() => {
     const startScanner = async () => {
+        // Only run scanner if activeTab is 'scanner'
+        if (activeTab !== 'scanner') {
+            if (scannerRef.current && isScannerRunning.current) {
+                scannerRef.current.stop().then(() => {
+                    scannerRef.current.clear();
+                    isScannerRunning.current = false;
+                }).catch((err: any) => console.error("Stop failed", err));
+            }
+            return;
+        }
+
         if (isScannerRunning.current || !document.getElementById('reader')) return;
 
         try {
@@ -96,14 +108,10 @@ const GateScanner: React.FC = () => {
 
     return () => {
         clearTimeout(timer);
-        if (scannerRef.current && isScannerRunning.current) {
-            scannerRef.current.stop().then(() => {
-                scannerRef.current.clear();
-                isScannerRunning.current = false;
-            }).catch((err: any) => console.error("Stop failed", err));
-        }
+        // Don't stop on unmount immediately to allow quick tab switching, 
+        // but explicit stop logic above handles tab changes.
     };
-  }, []);
+  }, [activeTab]);
 
   const handleScanProcess = async (decodedText: string) => {
       setLoading(true);
@@ -113,20 +121,26 @@ const GateScanner: React.FC = () => {
       setIsAlreadyCheckedIn(false);
       
       try {
-          const today = new Date().toISOString().split('T')[0];
-          await fetchDailyData(); 
-          
-          // 1. Check Exit Permissions (Prefix 'EXIT:' or just ID lookup)
-          // We'll try to find in exits first since prompt implies dedicated QR
+          // 1. Determine ID
           let exitId = decodedText;
           if (decodedText.startsWith('EXIT:')) exitId = decodedText.split(':')[1];
 
-          // Check Exits
-          const foundExit = todaysExits.find((e: any) => e.id === exitId);
+          // 2. Check Local Cache First (Fast)
+          let foundExit = todaysExits.find((e: any) => e.id === exitId);
+          
+          // 3. Fallback: Fetch from DB directly if not found locally (Fixes duplicate scan error on new items)
+          if (!foundExit) {
+              const freshExit = await getExitPermissionById(exitId);
+              if (freshExit) {
+                  foundExit = freshExit;
+                  // Update local list to prevent re-fetching
+                  setTodaysExits(prev => [...prev, freshExit]);
+              }
+          }
           
           if (foundExit) {
               setScannedExit(foundExit);
-              setScannedAppointment(null); // Clear appt
+              setScannedAppointment(null); 
               if (foundExit.status === 'completed') {
                   setIsAlreadyCheckedIn(true);
               }
@@ -134,19 +148,19 @@ const GateScanner: React.FC = () => {
               return;
           }
 
-          // 2. Check Visitor Appointments
+          // 4. Check Visitor Appointments (Local Cache is usually sufficient for pre-booked)
           const foundAppt = todaysVisits.find((a: any) => a.id === decodedText);
           
           if (foundAppt) {
               setScannedAppointment(foundAppt);
-              setScannedExit(null); // Clear exit
+              setScannedExit(null); 
               if (foundAppt.status === 'completed') {
                   setIsAlreadyCheckedIn(true);
               }
           } else {
               setScannedAppointment(null);
               setScannedExit(null);
-              setError("الرمز غير مسجل في النظام لهذا اليوم.");
+              setError("الرمز غير مسجل في النظام.");
           }
       } catch (e) {
           setError("حدث خطأ أثناء التحقق من البيانات.");
@@ -159,11 +173,9 @@ const GateScanner: React.FC = () => {
       setLoading(true);
       try {
           if (scannedExit) {
-              // Confirm Exit
               await completeExitPermission(scannedExit.id);
               setExitSuccess(true);
           } else if (scannedAppointment) {
-              // Confirm Visitor
               await checkInVisitor(scannedAppointment.id);
               setCheckInSuccess(true);
           }
@@ -192,8 +204,31 @@ const GateScanner: React.FC = () => {
       isProcessing.current = false;
   };
 
+  const generateSmartReport = async () => {
+      setIsAnalyzing(true);
+      try {
+          const exitsText = todaysExits.map(e => `student: ${e.studentName}, authorizer: ${e.createdByName || 'Unknown'}, status: ${e.status}`).join('\n');
+          const prompt = `
+            بصفتك مسؤول الأمن الذكي، حلل حركة خروج الطلاب اليوم:
+            إجمالي الخروج: ${stats.exits}
+            المكتمل: ${stats.exitsCompleted}
+            الانتظار: ${stats.exitsPending}
+            
+            قائمة الخروج:
+            ${exitsText}
+            
+            المطلوب:
+            1. تقرير موجز عن الحركة.
+            2. ذكر أسماء الموظفين (المصرحين) الأكثر نشاطاً في التصريح.
+            3. أي ملاحظات أمنية.
+          `;
+          const res = await generateSmartContent(prompt);
+          setAiReport(res);
+      } catch (e) { alert("فشل التحليل"); }
+      finally { setIsAnalyzing(false); }
+  };
+
   return (
-    <>
     <div className="max-w-7xl mx-auto animate-fade-in space-y-6 no-print pb-20">
         
         {/* COMPACT HEADER */}
@@ -204,26 +239,30 @@ const GateScanner: React.FC = () => {
                 </div>
                 <div>
                     <h1 className="text-lg font-bold text-slate-900">بوابة الأمن الذكية</h1>
-                    <p className="text-xs text-slate-500 font-medium">الماسح الضوئي نشط دائماً (الكاميرا الخلفية)</p>
+                    <p className="text-xs text-slate-500 font-medium">التحكم بالدخول والخروج</p>
                 </div>
             </div>
             
-            <div className="flex gap-2 w-full md:w-auto">
-                <button onClick={() => setShowExitList(true)} className="flex-1 md:flex-none bg-orange-50 text-orange-600 px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-orange-100 transition-colors flex items-center justify-center gap-2 border border-orange-100">
-                    <LogOut size={18} /> مغادرة الطلاب
-                    {todaysExits.filter(e => e.status === 'pending_pickup').length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 rounded-full animate-pulse">{todaysExits.filter(e => e.status === 'pending_pickup').length}</span>}
+            <div className="flex gap-2 w-full md:w-auto bg-slate-50 p-1 rounded-xl">
+                <button 
+                    onClick={() => setActiveTab('scanner')} 
+                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${activeTab === 'scanner' ? 'bg-white text-teal-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <Camera size={18} /> الماسح
                 </button>
-                <button onClick={() => setShowLog(true)} className="flex-1 md:flex-none bg-blue-50 text-blue-600 px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 border border-blue-100">
-                    <List size={18} /> سجل الزوار
+                <button 
+                    onClick={() => { setActiveTab('grid'); fetchDailyData(); }} 
+                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center justify-center gap-2 ${activeTab === 'grid' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <Grid size={18} /> 
+                    الطلاب ({stats.exitsPending})
                 </button>
             </div>
         </div>
 
-        {/* MAIN SCANNER AREA */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* 1. Camera Feed */}
-            <div className="bg-slate-900 rounded-3xl shadow-xl overflow-hidden flex flex-col relative border-4 border-slate-800 h-[500px]">
+        {/* --- TAB 1: SCANNER --- */}
+        {activeTab === 'scanner' && (
+            <div className="bg-slate-900 rounded-3xl shadow-xl overflow-hidden flex flex-col relative border-4 border-slate-800 h-[600px]">
                 <div className="absolute top-4 left-4 z-10 bg-red-600/90 text-white text-[10px] font-bold px-3 py-1 rounded-full animate-pulse flex items-center gap-1">
                     <div className="w-2 h-2 bg-white rounded-full"></div> مباشر
                 </div>
@@ -249,15 +288,19 @@ const GateScanner: React.FC = () => {
                         
                         {/* Detail Box */}
                         {(scannedAppointment || scannedExit) && !error && !checkInSuccess && !exitSuccess && !isAlreadyCheckedIn && (
-                            <div className="bg-white/10 rounded-xl p-4 w-full text-left mb-6 border border-white/10 mt-4">
+                            <div className="bg-white/10 rounded-xl p-4 w-full text-left mb-6 border border-white/10 mt-4 max-w-md">
                                 {scannedExit ? (
                                     <>
                                         <div className="text-orange-400 font-bold text-center border-b border-white/10 pb-2 mb-2">إذن مغادرة طالب</div>
-                                        <p className="text-white font-bold text-lg text-center mb-1">{scannedExit.studentName}</p>
+                                        <p className="text-white font-bold text-xl text-center mb-1">{scannedExit.studentName}</p>
                                         <p className="text-slate-300 text-center text-sm">{scannedExit.grade} - {scannedExit.className}</p>
-                                        <div className="mt-4 flex justify-between text-sm">
+                                        <div className="mt-4 flex justify-between text-sm border-t border-white/10 pt-2">
                                             <span className="text-slate-400">المستلم:</span>
                                             <span className="text-white font-bold">{scannedExit.parentName}</span>
+                                        </div>
+                                        <div className="mt-2 flex justify-between text-sm">
+                                            <span className="text-slate-400">تم التصريح بواسطة:</span>
+                                            <span className="text-orange-300 font-bold">{scannedExit.createdByName || 'غير محدد'}</span>
                                         </div>
                                     </>
                                 ) : (
@@ -276,7 +319,7 @@ const GateScanner: React.FC = () => {
                             </div>
                         )}
 
-                        <div className="flex gap-3 w-full mt-4">
+                        <div className="flex gap-3 w-full max-w-md mt-4">
                             {!checkInSuccess && !exitSuccess && !error && !isAlreadyCheckedIn && (
                                 <button onClick={confirmCheckIn} className={`flex-1 ${scannedExit ? 'bg-orange-500 hover:bg-orange-600' : 'bg-teal-500 hover:bg-teal-600'} text-white py-3 rounded-xl font-bold transition-colors`}>
                                     {scannedExit ? 'تأكيد المغادرة' : 'تأكيد الدخول'}
@@ -291,79 +334,103 @@ const GateScanner: React.FC = () => {
 
                 <div id="reader" className="w-full h-full object-cover"></div>
             </div>
+        )}
 
-            {/* 2. Side Panel (Quick Exit List) */}
-            <div className="flex flex-col gap-6 h-[500px]">
-                <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex-1 flex flex-col overflow-hidden">
-                    <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-50">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2"><LogOut className="text-orange-600" size={18}/> طلاب للمغادرة الآن</h3>
-                        <span className="text-xs font-bold bg-orange-100 text-orange-700 px-2 py-1 rounded-full">{todaysExits.filter(e => e.status === 'pending_pickup').length}</span>
+        {/* --- TAB 2: GRID DASHBOARD --- */}
+        {activeTab === 'grid' && (
+            <div className="space-y-6">
+                
+                {/* Stats Bar */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-3">
+                        <div className="bg-orange-50 p-2 rounded-lg text-orange-600"><LogOut size={20}/></div>
+                        <div><p className="text-xs text-slate-500 font-bold">انتظار خروج</p><p className="text-xl font-bold text-slate-800">{stats.exitsPending}</p></div>
                     </div>
-                    
-                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
-                        {todaysExits.filter(e => e.status === 'pending_pickup').length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-50">
-                                <LogOut size={40} className="mb-2"/>
-                                <p className="text-sm">لا يوجد طلاب بانتظار المغادرة</p>
-                            </div>
-                        ) : (
-                            todaysExits.filter(e => e.status === 'pending_pickup').map(e => (
-                                <div key={e.id} className="p-3 rounded-2xl bg-orange-50 border border-orange-100 flex flex-col gap-2">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <p className="font-bold text-slate-800 text-sm">{e.studentName}</p>
-                                            <p className="text-[10px] text-slate-500">{e.grade} - {e.className}</p>
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center gap-3">
+                        <div className="bg-emerald-50 p-2 rounded-lg text-emerald-600"><CheckCircle size={20}/></div>
+                        <div><p className="text-xs text-slate-500 font-bold">تم الخروج</p><p className="text-xl font-bold text-slate-800">{stats.exitsCompleted}</p></div>
+                    </div>
+                    <button onClick={() => setShowLog(true)} className="bg-blue-50 p-4 rounded-xl shadow-sm border border-blue-100 flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors text-blue-700 font-bold">
+                        <List size={20}/> سجل الزوار
+                    </button>
+                    <button onClick={generateSmartReport} disabled={isAnalyzing} className="bg-purple-50 p-4 rounded-xl shadow-sm border border-purple-100 flex items-center justify-center gap-2 hover:bg-purple-100 transition-colors text-purple-700 font-bold">
+                        {isAnalyzing ? <Loader2 size={20} className="animate-spin"/> : <Sparkles size={20}/>} التقرير الذكي
+                    </button>
+                </div>
+
+                {/* AI Report Section */}
+                {aiReport && (
+                    <div className="bg-purple-50 rounded-2xl p-6 border border-purple-200 relative animate-fade-in">
+                        <button onClick={() => setAiReport(null)} className="absolute top-4 left-4 text-purple-400 hover:text-red-500"><X size={18}/></button>
+                        <h3 className="font-bold text-purple-900 mb-3 flex items-center gap-2"><Sparkles size={18}/> تحليل الأمن الذكي</h3>
+                        <p className="text-sm text-purple-800 leading-relaxed whitespace-pre-line font-medium">{aiReport}</p>
+                    </div>
+                )}
+
+                {/* Main Grid */}
+                <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                    <Clock className="text-orange-500" size={20}/> قائمة الطلاب (الانتظار)
+                </h3>
+                
+                {todaysExits.filter(e => e.status === 'pending_pickup').length === 0 ? (
+                    <div className="bg-white rounded-3xl border border-slate-200 border-dashed p-12 text-center text-slate-400">
+                        <LogOut size={48} className="mx-auto mb-4 opacity-50"/>
+                        <p className="font-bold">لا يوجد طلاب بانتظار المغادرة حالياً</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {todaysExits.filter(e => e.status === 'pending_pickup').map(e => (
+                            <div key={e.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col hover:border-orange-300 transition-colors">
+                                <div className="p-4 flex items-start justify-between bg-gradient-to-br from-white to-slate-50">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-bold text-lg border-2 border-white shadow-sm">
+                                            {e.studentName.charAt(0)}
                                         </div>
-                                        <span className="text-[10px] font-bold text-orange-600 bg-white px-2 py-1 rounded shadow-sm">انتظار</span>
+                                        <div>
+                                            <h4 className="font-bold text-slate-900 text-base">{e.studentName}</h4>
+                                            <p className="text-xs text-slate-500">{e.grade} - {e.className}</p>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center justify-between text-xs pt-2 border-t border-orange-200/50">
-                                        <span className="text-slate-600">المستلم: <strong>{e.parentName}</strong></span>
-                                        <button onClick={() => manualConfirmExit(e.id)} className="bg-orange-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-orange-700 transition-colors">تأكيد الخروج</button>
+                                    <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded border border-orange-200">انتظار</span>
+                                </div>
+                                <div className="p-4 border-t border-slate-100 space-y-3 flex-1">
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-slate-400">المستلم:</span>
+                                        <span className="font-bold text-slate-700">{e.parentName}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-slate-400">المصرح:</span>
+                                        <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">{e.createdByName || 'غير محدد'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-slate-400">الوقت:</span>
+                                        <span className="font-mono text-slate-600">{new Date(e.createdAt).toLocaleTimeString('ar-SA', {hour: '2-digit', minute:'2-digit'})}</span>
                                     </div>
                                 </div>
-                            ))
-                        )}
+                                <div className="p-3 bg-slate-50 border-t border-slate-100">
+                                    <button onClick={() => manualConfirmExit(e.id)} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-xl font-bold text-sm transition-colors shadow-sm">
+                                        تأكيد المغادرة يدوياً
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                </div>
-            </div>
-        </div>
+                )}
 
-        {/* --- OVERLAYS --- */}
-
-        {/* EXIT LIST FULL OVERLAY */}
-        {showExitList && (
-            <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-                <div className="bg-white w-full max-w-4xl h-[85vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
-                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><LogOut size={20} className="text-orange-600"/> سجل استئذان الطلاب اليومي</h2>
-                        <button onClick={() => setShowExitList(false)} className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 shadow-sm border border-slate-100 transition-colors"><X size={20}/></button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-6">
-                        <table className="w-full text-right text-sm">
-                            <thead className="bg-slate-50 font-bold text-slate-600">
-                                <tr>
-                                    <th className="p-3">الطالب</th>
-                                    <th className="p-3">ولي الأمر</th>
-                                    <th className="p-3">وقت الطلب</th>
-                                    <th className="p-3">وقت الخروج</th>
-                                    <th className="p-3">الحالة</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {todaysExits.map((e, idx) => (
-                                    <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50">
-                                        <td className="p-3 font-bold">{e.studentName}</td>
-                                        <td className="p-3">{e.parentName} <span className="text-[10px] text-slate-400 block">{e.parentPhone}</span></td>
-                                        <td className="p-3 font-mono">{new Date(e.createdAt).toLocaleTimeString('ar-SA')}</td>
-                                        <td className="p-3 font-mono text-emerald-600 font-bold">{e.completedAt ? new Date(e.completedAt).toLocaleTimeString('ar-SA') : '-'}</td>
-                                        <td className="p-3">
-                                            {e.status === 'completed' ? <span className="text-emerald-600 font-bold">تم الخروج</span> : <button onClick={() => manualConfirmExit(e.id)} className="text-xs bg-orange-600 text-white px-2 py-1 rounded">تأكيد الآن</button>}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                {/* History (Completed) */}
+                <h3 className="font-bold text-slate-800 flex items-center gap-2 mt-8 opacity-60">
+                    <CheckCircle className="text-emerald-500" size={20}/> تم الخروج مؤخراً
+                </h3>
+                <div className="space-y-2 opacity-80">
+                    {todaysExits.filter(e => e.status === 'completed').slice(0, 5).map(e => (
+                        <div key={e.id} className="bg-slate-50 rounded-xl p-3 flex justify-between items-center border border-slate-200">
+                            <span className="font-bold text-slate-600 text-sm">{e.studentName}</span>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs text-slate-400">بواسطة: {e.createdByName}</span>
+                                <span className="text-xs font-mono text-emerald-600 font-bold">{new Date(e.completedAt!).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'})}</span>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         )}
@@ -377,7 +444,6 @@ const GateScanner: React.FC = () => {
                         <button onClick={() => setShowLog(false)} className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 shadow-sm border border-slate-100 transition-colors"><X size={20}/></button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-6">
-                        {/* Existing Visitor Table ... */}
                         <table className="w-full text-right text-sm">
                             <thead className="bg-slate-50 font-bold text-slate-600">
                                 <tr>
@@ -406,7 +472,6 @@ const GateScanner: React.FC = () => {
         )}
 
     </div>
-    </>
   );
 };
 

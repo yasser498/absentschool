@@ -280,7 +280,10 @@ const Inquiry: React.FC = () => {
                                                     <div key={p.id} className="flex justify-between items-center p-3 border-b border-slate-50 last:border-0">
                                                         <div>
                                                             <p className="font-bold text-slate-800 text-sm">{p.reason || 'بدون سبب'}</p>
-                                                            <p className="text-xs text-slate-500">{new Date(p.createdAt).toLocaleDateString('ar-SA')}</p>
+                                                            <div className="text-xs text-slate-500 flex gap-2">
+                                                                <span>{new Date(p.createdAt).toLocaleDateString('ar-SA')}</span>
+                                                                {p.createdByName && <span className="bg-slate-100 px-1 rounded">المصرح: {p.createdByName}</span>}
+                                                            </div>
                                                         </div>
                                                         <span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
                                                             {p.status === 'completed' ? 'تم الخروج' : 'منتهي/انتظار'}

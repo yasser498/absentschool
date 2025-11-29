@@ -10,13 +10,14 @@ import { GoogleGenAI } from "@google/genai";
 const CACHE: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 15 * 60 * 1000; // 15 Minutes
 
-export const getFromCache = <T>(key: string): T | null => {
+// Fixed: Changed from arrow function <T> to standard function to avoid JSX parsing error "Unexpected token '>'"
+export function getFromCache<T>(key: string): T | null {
   const cached = CACHE[key];
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.data as T;
   }
   return null;
-};
+}
 
 const setCache = (key: string, data: any) => {
   CACHE[key] = { data, timestamp: Date.now() };
@@ -808,6 +809,7 @@ const mapExitFromDB = (e: any): ExitPermission => ({
     parentPhone: e.parent_phone,
     reason: e.reason,
     createdBy: e.created_by,
+    createdByName: e.created_by_name, // Map new field
     status: e.status,
     createdAt: e.created_at,
     completedAt: e.completed_at
@@ -823,6 +825,7 @@ export const addExitPermission = async (perm: Omit<ExitPermission, 'id' | 'statu
         parent_phone: perm.parentPhone,
         reason: perm.reason,
         created_by: perm.createdBy,
+        created_by_name: perm.createdByName, // Save new field
         status: 'pending_pickup'
     });
     if (error) throw new Error(error.message);
@@ -839,6 +842,12 @@ export const getExitPermissions = async (date?: string, status?: string) => {
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) return [];
     return data.map(mapExitFromDB);
+};
+
+export const getExitPermissionById = async (id: string): Promise<ExitPermission | null> => {
+    const { data, error } = await supabase.from('exit_permissions').select('*').eq('id', id).single();
+    if (error) return null;
+    return mapExitFromDB(data);
 };
 
 export const getMyExitPermissions = async (studentIds: string[]) => {

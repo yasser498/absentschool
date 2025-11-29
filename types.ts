@@ -225,6 +225,7 @@ export interface ExitPermission {
   parentPhone: string;
   reason?: string;
   createdBy: string;
+  createdByName?: string; // New: Authorizer Name
   status: 'pending_pickup' | 'completed' | 'expired';
   createdAt: string;
   completedAt?: string;

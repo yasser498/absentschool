@@ -73,7 +73,8 @@ const ExitPermissions: React.FC = () => {
         parentName,
         parentPhone,
         reason,
-        createdBy: currentUser.id
+        createdBy: currentUser.id,
+        createdByName: currentUser.name // Add name here
       });
       alert('تم تسجيل إذن الاستئذان بنجاح. سيظهر الآن في بوابة الأمن.');
       setShowModal(false);
@@ -111,7 +112,7 @@ const ExitPermissions: React.FC = () => {
                   <tr className="bg-gray-100">
                       <th className="border border-black p-2">الطالب</th>
                       <th className="border border-black p-2">ولي الأمر</th>
-                      <th className="border border-black p-2">الجوال</th>
+                      <th className="border border-black p-2">المصرح (الموظف)</th>
                       <th className="border border-black p-2">وقت الطلب</th>
                       <th className="border border-black p-2">وقت الخروج</th>
                       <th className="border border-black p-2">الحالة</th>
@@ -122,7 +123,7 @@ const ExitPermissions: React.FC = () => {
                       <tr key={idx}>
                           <td className="border border-black p-2">{p.studentName}<br/><span className="text-[10px]">{p.grade} - {p.className}</span></td>
                           <td className="border border-black p-2">{p.parentName}</td>
-                          <td className="border border-black p-2">{p.parentPhone}</td>
+                          <td className="border border-black p-2">{p.createdByName || '-'}</td>
                           <td className="border border-black p-2">{new Date(p.createdAt).toLocaleTimeString('ar-SA')}</td>
                           <td className="border border-black p-2">{p.completedAt ? new Date(p.completedAt).toLocaleTimeString('ar-SA') : '-'}</td>
                           <td className="border border-black p-2">{p.status === 'completed' ? 'تم الخروج' : 'انتظار'}</td>
@@ -174,7 +175,7 @@ const ExitPermissions: React.FC = () => {
                                 <p className="text-xs text-slate-500">{perm.grade} - {perm.className}</p>
                                 <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
                                     <span className="flex items-center gap-1"><User size={12}/> ولي الأمر: {perm.parentName}</span>
-                                    <span className="flex items-center gap-1 font-mono"><Phone size={12}/> {perm.parentPhone}</span>
+                                    {perm.createdByName && <span className="flex items-center gap-1 font-bold text-slate-500 bg-slate-50 px-2 rounded">المصرح: {perm.createdByName}</span>}
                                 </div>
                             </div>
                         </div>

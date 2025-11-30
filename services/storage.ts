@@ -1,4 +1,3 @@
-
 import { supabase } from '../supabaseClient';
 import { 
   Appointment, AppointmentSlot, 
@@ -10,7 +9,6 @@ import { GoogleGenAI } from "@google/genai";
 const CACHE: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 15 * 60 * 1000; // 15 Minutes
 
-// Fixed: Changed from arrow function <T> to standard function to avoid JSX parsing error "Unexpected token '>'"
 export function getFromCache<T>(key: string): T | null {
   const cached = CACHE[key];
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -35,8 +33,6 @@ export const getAIConfig = (): AIConfig => {
   if (stored) return JSON.parse(stored);
   
   let apiKey = '';
-  
-  // Attempt 1: Safe process.env access (Standard)
   try {
     // @ts-ignore
     if (typeof process !== 'undefined' && process.env?.API_KEY) {
@@ -45,7 +41,6 @@ export const getAIConfig = (): AIConfig => {
     }
   } catch (e) { console.debug('process.env not available'); }
 
-  // Attempt 2: Safe import.meta.env access (Vite Specific - User Request)
   if (!apiKey) {
     try {
         // @ts-ignore
@@ -72,8 +67,7 @@ export const generateSmartContent = async (prompt: string, systemInstruction?: s
   }
 };
 
-// --- SPECIALIZED AI FUNCTIONS ---
-
+// ... (Keep existing specialized AI functions like generateExecutiveReport, generateSmartStudentReport etc.) ...
 // Helper to get Counselor Name
 const getCounselorName = async () => {
     const { data } = await supabase.from('staff').select('name, permissions');
@@ -86,7 +80,6 @@ const getCounselorName = async () => {
     return "الموجه الطلابي";
 };
 
-// 1. For Admin: Executive Report
 export const generateExecutiveReport = async (stats: any) => {
     const prompt = `
     بصفتك مستشاراً تربويًا وإداريًا خبيراً، قم بإعداد "تقرير تنفيذي شامل" لإدارة المدرسة بناءً على البيانات التالية:
@@ -107,14 +100,11 @@ export const generateExecutiveReport = async (stats: any) => {
     return await generateSmartContent(prompt);
 };
 
-// 2. For Parent: Smart Student Report
 export const generateSmartStudentReport = async (studentName: string, attendance: any[], behavior: any[], points: number) => {
     const absentDays = attendance.filter(a => a.status === 'ABSENT').length;
     const lateDays = attendance.filter(a => a.status === 'LATE').length;
     const behaviorCount = behavior.length;
-    
     const counselorName = await getCounselorName();
-
     const prompt = `
     اكتب رسالة تربوية موجهة لولي أمر الطالب "${studentName}".
     البيانات:
@@ -135,12 +125,10 @@ export const generateSmartStudentReport = async (studentName: string, attendance
     return await generateSmartContent(prompt);
 };
 
-// 3. For Deputy: Behavior Action Suggestion
 export const suggestBehaviorAction = async (violationName: string, historyCount: number) => {
     const prompt = `
     طالب قام بمخالفة: "${violationName}".
     هذه هي المرة رقم ${historyCount + 1} التي يرتكب فيها مخالفة.
-    
     بناءً على قواعد السلوك والمواظبة المدرسية العامة:
     1. ما هو الإجراء النظامي المقترح؟ (تدرج في العقوبة إذا كان مكرراً).
     2. نصيحة قصيرة يمكن توجيهها للطالب أثناء التحقيق.
@@ -148,12 +136,10 @@ export const suggestBehaviorAction = async (violationName: string, historyCount:
     return await generateSmartContent(prompt);
 };
 
-// 4. For Counselor: Case Study
 export const generateGuidancePlan = async (studentName: string, history: any) => {
     const prompt = `
     اكتب مسودة "خطة علاجية فردية" للطالب ${studentName}.
     المشاكل المرصودة: ${history}.
-    
     المطلوب:
     1. تشخيص مبدئي للمشكلة.
     2. هدف الجلسة الإرشادية القادمة.
@@ -162,57 +148,43 @@ export const generateGuidancePlan = async (studentName: string, history: any) =>
     return await generateSmartContent(prompt);
 };
 
-// --- NEW: USER SPECIFIC CONTEXT FOR CHATBOT ---
 export const generateUserSpecificBotContext = async (): Promise<{role: string, context: string}> => {
-    // 1. General School Context
     const news = await getSchoolNews();
     const generalInfo = await getBotContext();
     const newsText = news.slice(0, 3).map(n => `- خبر: ${n.title} (${n.content})`).join('\n');
-    
     let baseContext = `
     معلومات عامة عن المدرسة:
     ${generalInfo || "الدوام: 7:00 ص - 1:15 م."}
-    
     آخر الأخبار:
     ${newsText}
     `;
-
-    // 2. Check Login Session
     const adminSession = localStorage.getItem('ozr_admin_session');
     const staffSession = localStorage.getItem('ozr_staff_session');
     const parentId = localStorage.getItem('ozr_parent_id');
 
     if (adminSession) {
-        // Admin Context
         const requests = await getRequests();
         const pendingCount = requests.filter(r => r.status === 'PENDING').length;
         const risks = await getConsecutiveAbsences();
-        
         return {
             role: 'مدير النظام (Admin)',
             context: `
             ${baseContext}
-            
             أنت مساعد شخصي لمدير المدرسة.
             حالة النظام الحالية:
             - يوجد ${pendingCount} طلب عذر معلق يحتاج للمراجعة.
             - يوجد ${risks.length} طلاب في دائرة الخطر (غياب متصل لأكثر من 3 أيام).
             - جميع الصلاحيات متاحة لك في لوحة التحكم.
-            
             الطلاب في دائرة الخطر:
             ${risks.map(r => `${r.studentName} (${r.days} أيام)`).join(', ')}
             `
         };
     }
-
     if (staffSession) {
-        // Staff Context (Teacher, Deputy, Counselor)
         const user: StaffUser = JSON.parse(staffSession);
         const perms = user.permissions || [];
-        
         let roleName = 'معلم';
         let specificData = '';
-
         if (perms.includes('deputy')) {
             roleName = 'وكيل شؤون الطلاب';
             const behaviors = await getBehaviorRecords();
@@ -228,51 +200,40 @@ export const generateUserSpecificBotContext = async (): Promise<{role: string, c
             const pendingRefs = referrals.filter(r => r.status === 'pending').length;
             specificData = `- لديك ${pendingRefs} إحالة جديدة من المعلمين/الوكيل تحتاج لمعالجة.\n- يمكنك تسجيل جلسات إرشادية.`;
         } else {
-            // Regular Teacher
             const assignments = user.assignments || [];
             const classesText = assignments.map(a => `${a.grade} ${a.className}`).join(', ');
             specificData = `- الفصول المسندة إليك: ${classesText}.\n- يمكنك رصد الغياب ورفع الملاحظات السلوكية لطلاب هذه الفصول.`;
         }
-
         return {
             role: roleName,
             context: `
             ${baseContext}
-            
             أنت مساعد شخصي لـ ${roleName} واسمه ${user.name}.
             بيانات خاصة بمهامه:
             ${specificData}
             `
         };
     }
-
     if (parentId) {
-        // Parent Context
         const children = await getParentChildren(parentId);
         let childrenDetails = "";
-        
         for (const child of children) {
             const history = await getStudentAttendanceHistory(child.studentId, child.grade, child.className);
             const absentDays = history.filter(h => h.status === 'ABSENT').length;
             const points = (await getStudentPoints(child.studentId)).total;
             childrenDetails += `- الابن: ${child.name} (الصف: ${child.grade}). غياب: ${absentDays} يوم. نقاط تميز: ${points}.\n`;
         }
-
         return {
             role: 'ولي أمر',
             context: `
             ${baseContext}
-            
             أنت مساعد لولي أمر.
             بيانات أبنائه:
             ${childrenDetails || "لا يوجد أبناء مرتبطين حالياً. ساعده في طريقة ربط الأبناء عبر رقم الهوية."}
-            
             إذا سأل عن ابنه، أجب بناءً على البيانات أعلاه.
             `
         };
     }
-
-    // Public Context
     return {
         role: 'زائر',
         context: `
@@ -293,7 +254,8 @@ export const analyzeSentiment = async (text: string): Promise<'positive' | 'nega
     } catch (e) { return 'neutral'; }
 };
 
-// --- Mappers ---
+// --- CORE CRUD ---
+// ... (Mappers unchanged) ...
 const mapStudentFromDB = (s: any): Student => ({ id: s.id, name: s.name, studentId: s.student_id, grade: s.grade, className: s.class_name, phone: s.phone || '' });
 const mapStudentToDB = (s: Student) => ({ name: s.name, student_id: s.studentId, grade: s.grade, class_name: s.className, phone: s.phone });
 const mapRequestFromDB = (r: any): ExcuseRequest => ({ id: r.id, studentId: r.student_id, studentName: r.student_name, grade: r.grade, className: r.class_name, date: r.date, reason: r.reason, details: r.details, attachmentName: r.attachment_name, attachmentUrl: r.attachment_url, status: r.status as RequestStatus, submissionDate: r.submission_date });
@@ -312,301 +274,53 @@ const mapInsightFromDB = (i: any): AdminInsight => ({ id: i.id, targetRole: i.ta
 const mapSessionFromDB = (s: any): GuidanceSession => ({ id: s.id, studentId: s.student_id, studentName: s.student_name, date: s.date, sessionType: s.session_type, topic: s.topic, recommendations: s.recommendations, status: s.status });
 const mapSessionToDB = (s: GuidanceSession) => ({ student_id: s.studentId, student_name: s.studentName, date: s.date, session_type: s.sessionType, topic: s.topic, recommendations: s.recommendations, status: s.status });
 
-// --- APPOINTMENT SYSTEM ---
-
-export const getAvailableSlots = async (date?: string) => {
-    let query = supabase.from('appointment_slots').select('*');
-    if (date) query = query.eq('date', date);
-    else {
-        // If no date, get future slots
-        const today = new Date().toISOString().split('T')[0];
-        query = query.gte('date', today);
-    }
-        
-    const { data, error } = await query.order('date', { ascending: true }).order('start_time', { ascending: true });
-        
-    if (error) return [];
-    return data.map((s: any) => ({
-        id: s.id,
-        date: s.date,
-        startTime: s.start_time,
-        endTime: s.end_time,
-        maxCapacity: s.max_capacity,
-        currentBookings: s.current_bookings
-    }));
-};
-
-export const generateDefaultAppointmentSlots = async (date: string) => {
-    const slots = [];
-    const startHour = 7;
-    const startMinute = 30;
-    const endHour = 12;
-    
-    // Generate slots every 30 mins from 7:30 to 12:00
-    let current = new Date(`${date}T${startHour.toString().padStart(2,'0')}:${startMinute.toString().padStart(2,'0')}:00`);
-    const end = new Date(`${date}T${endHour.toString().padStart(2,'0')}:00:00`);
-
-    while (current < end) {
-        const startTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'});
-        
-        // Add 30 mins
-        current.setMinutes(current.getMinutes() + 30);
-        const endTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'});
-        
-        slots.push({
-            date: date,
-            start_time: startTime,
-            end_time: endTime,
-            max_capacity: 5,
-            current_bookings: 0
-        });
-    }
-
-    const { error } = await supabase.from('appointment_slots').insert(slots);
-    if (error) throw new Error(error.message);
-};
-
-export const addAppointmentSlot = async (slot: Omit<AppointmentSlot, 'id' | 'currentBookings'>) => {
-    const { error } = await supabase.from('appointment_slots').insert({
-        date: slot.date,
-        start_time: slot.startTime,
-        end_time: slot.endTime,
-        max_capacity: slot.maxCapacity
-    });
-    if (error) throw new Error(error.message);
-};
-
-export const updateAppointmentSlot = async (slot: AppointmentSlot) => {
-    const { error } = await supabase.from('appointment_slots').update({
-        start_time: slot.startTime,
-        end_time: slot.endTime,
-        max_capacity: slot.maxCapacity
-    }).eq('id', slot.id);
-    if (error) throw new Error(error.message);
-};
-
-export const deleteAppointmentSlot = async (id: string) => {
-    const { error } = await supabase.from('appointment_slots').delete().eq('id', id);
-    if (error) throw new Error(error.message);
-};
-
-export const bookAppointment = async (appt: Omit<Appointment, 'id' | 'status' | 'createdAt'>) => {
-    const { data: slot, error: slotError } = await supabase.from('appointment_slots').select('*').eq('id', appt.slotId).single();
-    if (slotError || !slot) throw new Error("الموعد غير موجود");
-    
-    if (slot.current_bookings >= slot.max_capacity) throw new Error("عفواً، اكتمل العدد لهذا الموعد");
-
-    const { data: newAppt, error: bookError } = await supabase.from('appointments').insert({
-        slot_id: appt.slotId,
-        student_id: appt.studentId,
-        student_name: appt.studentName,
-        parent_name: appt.parentName,
-        parent_civil_id: appt.parentCivilId,
-        visit_reason: appt.visitReason
-    }).select().single();
-
-    if (bookError) throw new Error(bookError.message);
-
-    await supabase.from('appointment_slots').update({ current_bookings: slot.current_bookings + 1 }).eq('id', appt.slotId);
-
-    // Return object consistent with Appointment interface, joining the Slot data manually
-    return {
-        id: newAppt.id,
-        slotId: newAppt.slot_id,
-        studentId: newAppt.student_id,
-        studentName: newAppt.student_name,
-        parentName: newAppt.parent_name,
-        parentCivilId: newAppt.parent_civil_id,
-        visitReason: newAppt.visit_reason,
-        status: newAppt.status,
-        createdAt: newAppt.created_at,
-        slot: {
-            id: slot.id,
-            date: slot.date,
-            startTime: slot.start_time,
-            endTime: slot.end_time,
-            maxCapacity: slot.max_capacity,
-            currentBookings: slot.current_bookings + 1
-        }
-    };
-};
-
-export const getMyAppointments = async (parentCivilId: string) => {
-    const { data, error } = await supabase
-        .from('appointments')
-        .select(`*, slot:appointment_slots(*)`)
-        .eq('parent_civil_id', parentCivilId)
-        .order('created_at', { ascending: false });
-
-    if (error) return [];
-    
-    return data.map((a: any) => ({
-        id: a.id,
-        slotId: a.slot_id,
-        studentId: a.student_id,
-        studentName: a.student_name,
-        parentName: a.parent_name,
-        parentCivilId: a.parent_civil_id,
-        visitReason: a.visit_reason,
-        status: a.status,
-        arrivedAt: a.arrived_at,
-        createdAt: a.created_at,
-        slot: a.slot ? {
-            id: a.slot.id,
-            date: a.slot.date,
-            startTime: a.slot.start_time,
-            endTime: a.slot.end_time,
-            maxCapacity: a.slot.max_capacity,
-            currentBookings: a.slot.current_bookings
-        } : undefined
-    }));
-};
-
-export const getDailyAppointments = async (date?: string) => {
-    let query = supabase.from('appointments').select(`*, slot:appointment_slots(*)`);
-    
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) return [];
-
-    const mapped = data.map((a: any) => ({
-        id: a.id,
-        slotId: a.slot_id,
-        studentId: a.student_id,
-        studentName: a.student_name,
-        parentName: a.parent_name,
-        parentCivilId: a.parent_civil_id,
-        visitReason: a.visit_reason,
-        status: a.status,
-        arrivedAt: a.arrived_at,
-        createdAt: a.created_at,
-        slot: a.slot ? {
-            id: a.slot.id,
-            date: a.slot.date,
-            startTime: a.slot.start_time,
-            endTime: a.slot.end_time
-        } : undefined
-    }));
-
-    if (date) {
-        return mapped.filter((a: Appointment) => a.slot?.date === date);
-    }
-    return mapped;
-};
-
-export const checkInVisitor = async (appointmentId: string) => {
-    const { error } = await supabase.from('appointments').update({
-        status: 'completed',
-        arrived_at: new Date().toISOString()
-    }).eq('id', appointmentId);
-    
-    if (error) throw new Error(error.message);
-};
-
-// --- NEWS SYSTEM ---
-export const getSchoolNews = async () => {
-    const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false });
-    if (error) return [];
-    return data.map((n: any) => ({
-        id: n.id,
-        title: n.title,
-        content: n.content,
-        author: n.author,
-        isUrgent: n.is_urgent,
-        createdAt: n.created_at
-    }));
-};
-
-export const addSchoolNews = async (news: Omit<SchoolNews, 'id' | 'createdAt'>) => {
-    const { error } = await supabase.from('news').insert({
-        title: news.title,
-        content: news.content,
-        author: news.author,
-        is_urgent: news.isUrgent
-    });
-    if (error) throw new Error(error.message);
-};
-
-export const updateSchoolNews = async (news: SchoolNews) => {
-    const { error } = await supabase.from('news').update({
-        title: news.title,
-        content: news.content,
-        is_urgent: news.isUrgent
-    }).eq('id', news.id);
-    if (error) throw new Error(error.message);
-};
-
-export const deleteSchoolNews = async (id: string) => {
-    const { error } = await supabase.from('news').delete().eq('id', id);
-    if (error) throw new Error(error.message);
-};
-
-// --- PARENT & GAMIFICATION ---
-export const linkParentToStudent = async (parentCivilId: string, studentId: string) => {
-    const { data } = await supabase.from('parent_links').select('*').eq('parent_civil_id', parentCivilId).eq('student_id', studentId);
-    if (data && data.length > 0) return;
-    const { error } = await supabase.from('parent_links').insert({ parent_civil_id: parentCivilId, student_id: studentId });
-    if (error) throw new Error(error.message);
-};
-
-export const getParentChildren = async (parentCivilId: string): Promise<Student[]> => {
-    const { data: links, error } = await supabase.from('parent_links').select('student_id').eq('parent_civil_id', parentCivilId);
-    if (error) return [];
-    if (!links || links.length === 0) return [];
-    const studentIds = links.map((l: any) => l.student_id);
-    const { data: students, error: err2 } = await supabase.from('students').select('*').in('student_id', studentIds);
-    if (err2) return [];
-    return students.map(mapStudentFromDB);
-};
-
-export const addStudentPoints = async (studentId: string, points: number, reason: string, type: 'behavior' | 'attendance' | 'academic') => {
-    const { error } = await supabase.from('student_points').insert({ student_id: studentId, points, reason, type });
-    if (error) throw new Error(error.message);
-    await createNotification(studentId, 'info', 'نقاط جديدة', `تم إضافة ${points} نقطة لرصيدك: ${reason}`);
-};
-
-export const getStudentPoints = async (studentId: string): Promise<{total: number, history: StudentPoint[]}> => {
-    const { data, error } = await supabase.from('student_points').select('*').eq('student_id', studentId).order('created_at', { ascending: false });
-    if (error) return { total: 0, history: [] };
-    const total = data.reduce((sum: number, item: any) => sum + item.points, 0);
-    const history = data.map((p: any) => ({ id: p.id, studentId: p.student_id, points: p.points, reason: p.reason, type: p.type, createdAt: p.created_at }));
-    return { total, history };
-};
-
-export const getTopStudents = async (limit = 5) => {
-    const { data, error } = await supabase.from('student_points').select('student_id, points');
-    if (error) return [];
-    const totals: Record<string, number> = {};
-    data.forEach((row: any) => { totals[row.student_id] = (totals[row.student_id] || 0) + row.points; });
-    const topIds = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, limit);
-    const result = [];
-    for (const [sid, score] of topIds) { const student = await getStudentByCivilId(sid); if (student) result.push({ ...student, points: score }); }
-    return result;
-};
-
-export const createNotification = async (targetId: string, type: 'alert'|'info'|'success', title: string, message: string) => {
-    await supabase.from('notifications').insert({ target_user_id: targetId, type, title, message });
-};
-
-export const getNotifications = async (targetId: string) => {
-    const { data, error } = await supabase.from('notifications').select('*').eq('target_user_id', targetId).order('created_at', { ascending: false });
-    if (error) return [];
-    return data.map((n: any) => ({ id: n.id, targetUserId: n.target_user_id, title: n.title, message: n.message, isRead: n.is_read, type: n.type, createdAt: n.created_at }));
-};
-
-export const markNotificationRead = async (id: string) => { await supabase.from('notifications').update({ is_read: true }).eq('id', id); };
-
-// --- CORE CRUD ---
 export const testSupabaseConnection = async (): Promise<{ success: boolean; message: string }> => { try { const { data, error } = await supabase.from('students').select('count', { count: 'exact', head: true }); if (error) throw error; return { success: true, message: `Connected` }; } catch (error: any) { return { success: false, message: `Failed: ${error.message}` }; } };
-export const uploadFile = async (file: File): Promise<string | null> => { const safeName = `${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi, '_')}`; const { data, error } = await supabase.storage.from('excuses').upload(safeName, file); if (error) { console.error('Upload error:', error); return null; } const { data: publicUrlData } = supabase.storage.from('excuses').getPublicUrl(safeName); return publicUrlData.publicUrl; };
+
+// Helper to convert file to base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+  });
+};
+
+export const uploadFile = async (file: File): Promise<string | null> => {
+  const safeName = `${Date.now()}_${file.name.replace(/[^a-z0-9.]/gi, '_')}`;
+  
+  try {
+    // Try Supabase Storage first
+    const { data, error } = await supabase.storage.from('excuses').upload(safeName, file);
+    
+    if (error) {
+        throw new Error(error.message);
+    }
+    
+    const { data: publicUrlData } = supabase.storage.from('excuses').getPublicUrl(safeName);
+    return publicUrlData.publicUrl;
+
+  } catch (err: any) {
+    console.warn('Storage upload failed, attempting fallback to Base64:', err.message);
+    // Fallback: Convert to Base64 data URI
+    // This allows the app to work even if the 'excuses' bucket hasn't been created in Supabase yet.
+    try {
+        return await fileToBase64(file);
+    } catch (e) {
+        console.error('Base64 conversion failed', e);
+        return null;
+    }
+  }
+};
+
 export const getStudents = async (force = false) => { const { data, error } = await supabase.from('students').select('*'); if (error) { console.error(error); return []; } return data.map(mapStudentFromDB); };
-export const getStudentsSync = () => null; // Not supported with Supabase async
+export const getStudentsSync = () => null;
 export const getStudentByCivilId = async (id: string) => { const { data, error } = await supabase.from('students').select('*').eq('student_id', id).single(); if (error) return null; return mapStudentFromDB(data); };
 export const addStudent = async (student: Student) => { const { data, error } = await supabase.from('students').insert(mapStudentToDB(student)).select().single(); if (error) throw new Error(error.message); return mapStudentFromDB(data); };
 export const updateStudent = async (student: Student) => { const { error } = await supabase.from('students').update(mapStudentToDB(student)).eq('student_id', student.studentId); if (error) throw new Error(error.message); };
 export const deleteStudent = async (id: string) => { const { error } = await supabase.from('students').delete().eq('id', id); if (error) throw new Error(error.message); };
 export const syncStudentsBatch = async (toAdd: Student[], toUpdate: Student[], toDeleteIds: string[]) => {
     if (toDeleteIds.length) await supabase.from('students').delete().in('id', toDeleteIds);
-    // Upsert is efficient for add/update
     const upsertData = [...toAdd, ...toUpdate].map(mapStudentToDB);
     if (upsertData.length) {
         const { error } = await supabase.from('students').upsert(upsertData, { onConflict: 'student_id' });
@@ -616,7 +330,6 @@ export const syncStudentsBatch = async (toAdd: Student[], toUpdate: Student[], t
 export const getRequests = async (force = false) => { const { data, error } = await supabase.from('requests').select('*').order('submission_date', { ascending: false }); if (error) return []; return data.map(mapRequestFromDB); };
 export const getRequestsByStudentId = async (studentId: string) => { const { data, error } = await supabase.from('requests').select('*').eq('student_id', studentId).order('submission_date', { ascending: false }); if (error) return []; return data.map(mapRequestFromDB); };
 export const getPendingRequestsCountForStaff = async (assignments: ClassAssignment[]) => {
-    // Cannot do complex filtering easily in one query without join, fetching pending then filtering in memory
     const { data } = await supabase.from('requests').select('grade, class_name').eq('status', 'PENDING');
     if (!data) return 0;
     return data.filter(r => assignments.some(a => a.grade === r.grade && a.className === r.class_name)).length;
@@ -629,8 +342,6 @@ export const addRequest = async (request: ExcuseRequest) => {
 export const updateRequestStatus = async (id: string, status: RequestStatus) => { 
     const { error } = await supabase.from('requests').update({ status }).eq('id', id); 
     if (error) throw new Error(error.message); 
-    
-    // Notify
     const { data: req } = await supabase.from('requests').select('student_id').eq('id', id).single();
     if (req) {
         const msg = status === 'APPROVED' ? 'تم قبول العذر المقدم.' : 'تم رفض العذر المقدم.';
@@ -647,7 +358,6 @@ export const deleteStaffUser = async (id: string) => { const { error } = await s
 export const authenticateStaff = async (passcode: string): Promise<StaffUser | undefined> => { const { data, error } = await supabase.from('staff').select('*').eq('passcode', passcode).single(); if (error || !data) return undefined; return mapStaffFromDB(data); };
 export const getAvailableClassesForGrade = async (grade: string) => { const { data } = await supabase.from('students').select('class_name').eq('grade', grade); if (!data) return []; return Array.from(new Set(data.map((s: any) => s.class_name))).sort(); };
 export const saveAttendanceRecord = async (record: AttendanceRecord) => { 
-    // Check existing
     const { data: existing } = await supabase.from('attendance').select('id').eq('date', record.date).eq('grade', record.grade).eq('class_name', record.className).single();
     if (existing) {
         const { error } = await supabase.from('attendance').update(mapAttendanceToDB(record)).eq('id', existing.id);
@@ -660,10 +370,8 @@ export const saveAttendanceRecord = async (record: AttendanceRecord) => {
 export const getAttendanceRecordForClass = async (date: string, grade: string, className: string) => { const { data, error } = await supabase.from('attendance').select('*').eq('date', date).eq('grade', grade).eq('class_name', className).single(); if (error) return null; return mapAttendanceFromDB(data); };
 export const getAttendanceRecords = async () => { const { data, error } = await supabase.from('attendance').select('*'); if (error) return []; return data.map(mapAttendanceFromDB); };
 export const getStudentAttendanceHistory = async (studentId: string, grade: string, className: string) => {
-    // Fetch all attendance records for this class
     const { data: records } = await supabase.from('attendance').select('*').eq('grade', grade).eq('class_name', className);
     if (!records) return [];
-    
     const history: { date: string, status: AttendanceStatus }[] = [];
     records.forEach((rec: any) => {
         const studentRecord = rec.records.find((r: any) => r.studentId === studentId);
@@ -677,14 +385,12 @@ export const getDailyAttendanceReport = async (date: string) => {
     const { data: records } = await supabase.from('attendance').select('*').eq('date', date);
     const details: any[] = [];
     let totalPresent = 0, totalAbsent = 0, totalLate = 0;
-    
     if (records) {
         records.forEach((rec: any) => {
             rec.records.forEach((stu: any) => {
                 if (stu.status === 'ABSENT') totalAbsent++;
                 else if (stu.status === 'LATE') totalLate++;
                 else totalPresent++;
-                
                 if (stu.status !== 'PRESENT') {
                     details.push({
                         studentId: stu.studentId,
@@ -700,14 +406,10 @@ export const getDailyAttendanceReport = async (date: string) => {
     return { totalPresent, totalAbsent, totalLate, details };
 };
 export const clearAttendance = async () => { await supabase.from('attendance').delete().neq('id', '0'); };
-
 export const getConsecutiveAbsences = async () => {
     const { data: records } = await supabase.from('attendance').select('*').order('date', { ascending: false });
     if (!records) return [];
-    
-    // Group by student
     const studentHistory: Record<string, {name: string, statuses: string[], dates: string[]}> = {};
-    
     records.forEach((classRecord: any) => {
         classRecord.records.forEach((stu: any) => {
             if (!studentHistory[stu.studentId]) {
@@ -717,26 +419,20 @@ export const getConsecutiveAbsences = async () => {
             studentHistory[stu.studentId].dates.push(classRecord.date);
         });
     });
-
-    // Fetch Risk Actions (Resolved Alerts) within last 7 days
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const { data: actions } = await supabase
         .from('risk_actions')
         .select('student_id')
         .gte('resolved_at', sevenDaysAgo.toISOString());
-    
     const resolvedStudentIds = new Set(actions?.map((a: any) => a.student_id) || []);
-
     const alerts: any[] = [];
     Object.entries(studentHistory).forEach(([id, data]) => {
         let consecutive = 0;
         for (const status of data.statuses) {
             if (status === 'ABSENT') consecutive++;
-            else break; // Break on present/late
+            else break;
         }
-        
-        // Filter out resolved students
         if (consecutive >= 3 && !resolvedStudentIds.has(id)) {
             alerts.push({
                 studentId: id,
@@ -746,10 +442,8 @@ export const getConsecutiveAbsences = async () => {
             });
         }
     });
-    
     return alerts;
 };
-
 export const resolveAbsenceAlert = async (studentId: string, action: string) => { 
     await supabase.from('risk_actions').insert({
         student_id: studentId,
@@ -757,16 +451,15 @@ export const resolveAbsenceAlert = async (studentId: string, action: string) => 
         resolved_at: new Date().toISOString()
     });
 };
-
 export const getBehaviorRecords = async (studentId?: string) => {
-    let query = supabase.from('behaviors').select('*'); // Fixed table name
+    let query = supabase.from('behaviors').select('*'); 
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) return [];
     return data.map(mapBehaviorFromDB);
 };
 export const addBehaviorRecord = async (record: BehaviorRecord) => { 
-    const { error } = await supabase.from('behaviors').insert(mapBehaviorToDB(record)); // Fixed table name
+    const { error } = await supabase.from('behaviors').insert(mapBehaviorToDB(record)); 
     if (error) throw new Error(error.message); 
     await createNotification(record.studentId, 'alert', 'مخالفة سلوكية', `تم تسجيل مخالفة: ${record.violationName}`);
 };
@@ -820,16 +513,12 @@ export const clearReferrals = async () => { await supabase.from('referrals').del
 export const addGuidanceSession = async (session: GuidanceSession) => { const { error } = await supabase.from('guidance_sessions').insert(mapSessionToDB(session)); if (error) throw new Error(error.message); };
 export const getGuidanceSessions = async () => { const { data, error } = await supabase.from('guidance_sessions').select('*').order('date', { ascending: false }); if (error) return []; return data.map(mapSessionFromDB); };
 
-// --- BOT CONTEXT MANAGEMENT ---
 export const saveBotContext = async (content: string) => {
-    // We reuse admin_insights with a special role 'bot_context'
-    // First, clear old context to avoid duplicates (optional, or keep history)
     await supabase.from('admin_insights').delete().eq('target_role', 'bot_context');
-    
     const { error } = await supabase.from('admin_insights').insert({
         target_role: 'bot_context',
         content: content,
-        is_read: false // used as dummy
+        is_read: false
     });
     if (error) throw new Error(error.message);
 };
@@ -842,79 +531,38 @@ export const getBotContext = async () => {
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
-        
     if (error || !data) return "";
     return data.content;
 };
 
-// --- EXIT PERMISSIONS SYSTEM (استئذان الطلاب) ---
+// ... (Exit Permissions, Appointments, News, Parent Link, Student Points - keep existing code) ...
+const mapExitFromDB = (e: any): ExitPermission => ({ id: e.id, studentId: e.student_id, studentName: e.student_name, grade: e.grade, className: e.class_name, parentName: e.parent_name, parentPhone: e.parent_phone, reason: e.reason, createdBy: e.created_by, createdByName: e.created_by_name, status: e.status, createdAt: e.created_at, completedAt: e.completed_at });
+export const addExitPermission = async (perm: Omit<ExitPermission, 'id' | 'status' | 'createdAt' | 'completedAt'>) => { const { error } = await supabase.from('exit_permissions').insert({ student_id: perm.studentId, student_name: perm.studentName, grade: perm.grade, class_name: perm.className, parent_name: perm.parentName, parent_phone: perm.parentPhone, reason: perm.reason, created_by: perm.createdBy, created_by_name: perm.createdByName, status: 'pending_pickup' }); if (error) throw new Error(error.message); };
+export const getExitPermissions = async (date?: string, status?: string) => { let query = supabase.from('exit_permissions').select('*'); if (date) query = query.gte('created_at', `${date}T00:00:00`).lte('created_at', `${date}T23:59:59`); if (status) query = query.eq('status', status); const { data, error } = await query.order('created_at', { ascending: false }); if (error) return []; return data.map(mapExitFromDB); };
+export const getExitPermissionById = async (id: string): Promise<ExitPermission | null> => { const { data, error } = await supabase.from('exit_permissions').select('*').eq('id', id).single(); if (error) return null; return mapExitFromDB(data); };
+export const getMyExitPermissions = async (studentIds: string[]) => { if (studentIds.length === 0) return []; const { data, error } = await supabase.from('exit_permissions').select('*').in('student_id', studentIds).order('created_at', { ascending: false }); if (error) return []; return data.map(mapExitFromDB); };
+export const completeExitPermission = async (id: string) => { const { error } = await supabase.from('exit_permissions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id); if (error) throw new Error(error.message); };
 
-const mapExitFromDB = (e: any): ExitPermission => ({
-    id: e.id,
-    studentId: e.student_id,
-    studentName: e.student_name,
-    grade: e.grade,
-    className: e.class_name,
-    parentName: e.parent_name,
-    parentPhone: e.parent_phone,
-    reason: e.reason,
-    createdBy: e.created_by,
-    createdByName: e.created_by_name, // Map new field
-    status: e.status,
-    createdAt: e.created_at,
-    completedAt: e.completed_at
-});
+export const getAvailableSlots = async (date?: string) => { let query = supabase.from('appointment_slots').select('*'); if (date) query = query.eq('date', date); else { const today = new Date().toISOString().split('T')[0]; query = query.gte('date', today); } const { data, error } = await query.order('date', { ascending: true }).order('start_time', { ascending: true }); if (error) return []; return data.map((s: any) => ({ id: s.id, date: s.date, startTime: s.start_time, endTime: s.end_time, maxCapacity: s.max_capacity, currentBookings: s.current_bookings })); };
+export const generateDefaultAppointmentSlots = async (date: string) => { const slots = []; const startHour = 7; const startMinute = 30; const endHour = 12; let current = new Date(`${date}T${startHour.toString().padStart(2,'0')}:${startMinute.toString().padStart(2,'0')}:00`); const end = new Date(`${date}T${endHour.toString().padStart(2,'0')}:00:00`); while (current < end) { const startTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}); current.setMinutes(current.getMinutes() + 30); const endTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}); slots.push({ date: date, start_time: startTime, end_time: endTime, max_capacity: 5, current_bookings: 0 }); } const { error } = await supabase.from('appointment_slots').insert(slots); if (error) throw new Error(error.message); };
+export const addAppointmentSlot = async (slot: Omit<AppointmentSlot, 'id' | 'currentBookings'>) => { const { error } = await supabase.from('appointment_slots').insert({ date: slot.date, start_time: slot.startTime, end_time: slot.endTime, max_capacity: slot.maxCapacity }); if (error) throw new Error(error.message); };
+export const updateAppointmentSlot = async (slot: AppointmentSlot) => { const { error } = await supabase.from('appointment_slots').update({ start_time: slot.startTime, end_time: slot.endTime, max_capacity: slot.maxCapacity }).eq('id', slot.id); if (error) throw new Error(error.message); };
+export const deleteAppointmentSlot = async (id: string) => { const { error } = await supabase.from('appointment_slots').delete().eq('id', id); if (error) throw new Error(error.message); };
+export const bookAppointment = async (appt: Omit<Appointment, 'id' | 'status' | 'createdAt'>) => { const { data: slot, error: slotError } = await supabase.from('appointment_slots').select('*').eq('id', appt.slotId).single(); if (slotError || !slot) throw new Error("الموعد غير موجود"); if (slot.current_bookings >= slot.max_capacity) throw new Error("عفواً، اكتمل العدد لهذا الموعد"); const { data: newAppt, error: bookError } = await supabase.from('appointments').insert({ slot_id: appt.slotId, student_id: appt.studentId, student_name: appt.studentName, parent_name: appt.parentName, parent_civil_id: appt.parentCivilId, visit_reason: appt.visitReason }).select().single(); if (bookError) throw new Error(bookError.message); await supabase.from('appointment_slots').update({ current_bookings: slot.current_bookings + 1 }).eq('id', appt.slotId); return { id: newAppt.id, slotId: newAppt.slot_id, studentId: newAppt.student_id, studentName: newAppt.student_name, parentName: newAppt.parent_name, parentCivilId: newAppt.parent_civil_id, visitReason: newAppt.visit_reason, status: newAppt.status, createdAt: newAppt.created_at, slot: { id: slot.id, date: slot.date, startTime: slot.start_time, endTime: slot.end_time, maxCapacity: slot.max_capacity, currentBookings: slot.current_bookings + 1 } }; };
+export const getMyAppointments = async (parentCivilId: string) => { const { data, error } = await supabase.from('appointments').select(`*, slot:appointment_slots(*)`).eq('parent_civil_id', parentCivilId).order('created_at', { ascending: false }); if (error) return []; return data.map((a: any) => ({ id: a.id, slotId: a.slot_id, studentId: a.student_id, studentName: a.student_name, parentName: a.parent_name, parentCivilId: a.parent_civil_id, visitReason: a.visit_reason, status: a.status, arrivedAt: a.arrived_at, createdAt: a.created_at, slot: a.slot ? { id: a.slot.id, date: a.slot.date, startTime: a.slot.start_time, endTime: a.slot.end_time, maxCapacity: a.slot.max_capacity, currentBookings: a.slot.current_bookings } : undefined })); };
+export const getDailyAppointments = async (date?: string) => { let query = supabase.from('appointments').select(`*, slot:appointment_slots(*)`); const { data, error } = await query.order('created_at', { ascending: false }); if (error) return []; const mapped = data.map((a: any) => ({ id: a.id, slotId: a.slot_id, studentId: a.student_id, studentName: a.student_name, parentName: a.parent_name, parentCivilId: a.parent_civil_id, visitReason: a.visit_reason, status: a.status, arrivedAt: a.arrived_at, createdAt: a.created_at, slot: a.slot ? { id: a.slot.id, date: a.slot.date, startTime: a.slot.start_time, endTime: a.slot.end_time } : undefined })); if (date) { return mapped.filter((a: Appointment) => a.slot?.date === date); } return mapped; };
+export const checkInVisitor = async (appointmentId: string) => { const { error } = await supabase.from('appointments').update({ status: 'completed', arrived_at: new Date().toISOString() }).eq('id', appointmentId); if (error) throw new Error(error.message); };
 
-export const addExitPermission = async (perm: Omit<ExitPermission, 'id' | 'status' | 'createdAt' | 'completedAt'>) => {
-    const { error } = await supabase.from('exit_permissions').insert({
-        student_id: perm.studentId,
-        student_name: perm.studentName,
-        grade: perm.grade,
-        class_name: perm.className,
-        parent_name: perm.parentName,
-        parent_phone: perm.parentPhone,
-        reason: perm.reason,
-        created_by: perm.createdBy,
-        created_by_name: perm.createdByName, // Ensure this field is sent
-        status: 'pending_pickup'
-    });
-    if (error) throw new Error(error.message);
-};
+export const getSchoolNews = async () => { const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, title: n.title, content: n.content, author: n.author, isUrgent: n.is_urgent, createdAt: n.created_at })); };
+export const addSchoolNews = async (news: Omit<SchoolNews, 'id' | 'createdAt'>) => { const { error } = await supabase.from('news').insert({ title: news.title, content: news.content, author: news.author, is_urgent: news.isUrgent }); if (error) throw new Error(error.message); };
+export const updateSchoolNews = async (news: SchoolNews) => { const { error } = await supabase.from('news').update({ title: news.title, content: news.content, is_urgent: news.isUrgent }).eq('id', news.id); if (error) throw new Error(error.message); };
+export const deleteSchoolNews = async (id: string) => { const { error } = await supabase.from('news').delete().eq('id', id); if (error) throw new Error(error.message); };
 
-export const getExitPermissions = async (date?: string, status?: string) => {
-    let query = supabase.from('exit_permissions').select('*');
-    if (date) {
-        // Simple date filtering (starts with YYYY-MM-DD)
-        query = query.gte('created_at', `${date}T00:00:00`).lte('created_at', `${date}T23:59:59`);
-    }
-    if (status) query = query.eq('status', status);
-    
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) return [];
-    return data.map(mapExitFromDB);
-};
-
-export const getExitPermissionById = async (id: string): Promise<ExitPermission | null> => {
-    const { data, error } = await supabase.from('exit_permissions').select('*').eq('id', id).single();
-    if (error) return null;
-    return mapExitFromDB(data);
-};
-
-export const getMyExitPermissions = async (studentIds: string[]) => {
-    if (studentIds.length === 0) return [];
-    const { data, error } = await supabase.from('exit_permissions')
-        .select('*')
-        .in('student_id', studentIds)
-        .order('created_at', { ascending: false });
-        
-    if (error) return [];
-    return data.map(mapExitFromDB);
-};
-
-export const completeExitPermission = async (id: string) => {
-    const { error } = await supabase.from('exit_permissions').update({
-        status: 'completed',
-        completed_at: new Date().toISOString()
-    }).eq('id', id);
-    if (error) throw new Error(error.message);
-};
+export const linkParentToStudent = async (parentCivilId: string, studentId: string) => { const { data } = await supabase.from('parent_links').select('*').eq('parent_civil_id', parentCivilId).eq('student_id', studentId); if (data && data.length > 0) return; const { error } = await supabase.from('parent_links').insert({ parent_civil_id: parentCivilId, student_id: studentId }); if (error) throw new Error(error.message); };
+export const getParentChildren = async (parentCivilId: string): Promise<Student[]> => { const { data: links, error } = await supabase.from('parent_links').select('student_id').eq('parent_civil_id', parentCivilId); if (error) return []; if (!links || links.length === 0) return []; const studentIds = links.map((l: any) => l.student_id); const { data: students, error: err2 } = await supabase.from('students').select('*').in('student_id', studentIds); if (err2) return []; return students.map(mapStudentFromDB); };
+export const addStudentPoints = async (studentId: string, points: number, reason: string, type: 'behavior' | 'attendance' | 'academic') => { const { error } = await supabase.from('student_points').insert({ student_id: studentId, points, reason, type }); if (error) throw new Error(error.message); await createNotification(studentId, 'info', 'نقاط جديدة', `تم إضافة ${points} نقطة لرصيدك: ${reason}`); };
+export const getStudentPoints = async (studentId: string): Promise<{total: number, history: StudentPoint[]}> => { const { data, error } = await supabase.from('student_points').select('*').eq('student_id', studentId).order('created_at', { ascending: false }); if (error) return { total: 0, history: [] }; const total = data.reduce((sum: number, item: any) => sum + item.points, 0); const history = data.map((p: any) => ({ id: p.id, studentId: p.student_id, points: p.points, reason: p.reason, type: p.type, createdAt: p.created_at })); return { total, history }; };
+export const getTopStudents = async (limit = 5) => { const { data, error } = await supabase.from('student_points').select('student_id, points'); if (error) return []; const totals: Record<string, number> = {}; data.forEach((row: any) => { totals[row.student_id] = (totals[row.student_id] || 0) + row.points; }); const topIds = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, limit); const result = []; for (const [sid, score] of topIds) { const student = await getStudentByCivilId(sid); if (student) result.push({ ...student, points: score }); } return result; };
+export const createNotification = async (targetId: string, type: 'alert'|'info'|'success', title: string, message: string) => { await supabase.from('notifications').insert({ target_user_id: targetId, type, title, message }); };
+export const getNotifications = async (targetId: string) => { const { data, error } = await supabase.from('notifications').select('*').eq('target_user_id', targetId).order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, targetUserId: n.target_user_id, title: n.title, message: n.message, isRead: n.is_read, type: n.type, createdAt: n.created_at })); };
+export const markNotificationRead = async (id: string) => { await supabase.from('notifications').update({ is_read: true }).eq('id', id); };

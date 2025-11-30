@@ -85,7 +85,7 @@ const Dashboard: React.FC = () => {
   const [newNewsContent, setNewNewsContent] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
   const [isGeneratingNews, setIsGeneratingNews] = useState(false); 
-  const [editingNewsId, setEditingNewsId] = useState<string | null>(null); // New: Track editing ID
+  const [editingNewsId, setEditingNewsId] = useState<string | null>(null);
 
   // Visits
   const [todaysAppointments, setTodaysAppointments] = useState<Appointment[]>([]);
@@ -175,7 +175,7 @@ const Dashboard: React.FC = () => {
 
   const openEditSlotModal = (slot: AppointmentSlot) => {
       setEditingSlotId(slot.id);
-      setNewSlotStart(slot.startTime); // Ensure DB time format matches input type="time" (HH:mm)
+      setNewSlotStart(slot.startTime); 
       setNewSlotEnd(slot.endTime);
       setNewSlotCapacity(slot.maxCapacity);
       setShowSlotModal(true);
@@ -195,7 +195,7 @@ const Dashboard: React.FC = () => {
                   startTime: newSlotStart,
                   endTime: newSlotEnd,
                   maxCapacity: newSlotCapacity,
-                  currentBookings: 0 // Not updated here
+                  currentBookings: 0 
               });
               alert("تم تعديل الموعد");
           } else {
@@ -250,14 +250,11 @@ const Dashboard: React.FC = () => {
       const activities = [
           ...requests.map(r => ({ type: 'request', title: 'عذر جديد', desc: `${r.studentName}: ${r.reason}`, time: r.submissionDate })),
           ...behaviorRecords.map(b => ({ type: 'behavior', title: 'مخالفة سلوكية', desc: `${b.studentName}: ${b.violationName}`, time: b.createdAt || b.date })),
-          ...attendanceRecords.map(a => ({ type: 'attendance', title: 'رصد غياب', desc: `تم رصد ${a.grade} - ${a.className}`, time: a.date })), // Approximate time
+          ...attendanceRecords.map(a => ({ type: 'attendance', title: 'رصد غياب', desc: `تم رصد ${a.grade} - ${a.className}`, time: a.date })),
       ];
-      // Sort by date desc
       return activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 10);
   }, [requests, behaviorRecords, attendanceRecords]);
 
-  // ... (Other handlers unchanged)
-  
   const handleGenerateBriefing = async () => {
       setIsGenerating(true);
       try {
@@ -323,7 +320,6 @@ const Dashboard: React.FC = () => {
   const saveSchoolSettings = () => { localStorage.setItem('school_name', tempSchoolName); localStorage.setItem('school_logo', tempSchoolLogo); setSchoolName(tempSchoolName); setSchoolLogo(tempSchoolLogo); alert("تم الحفظ"); };
   const executeDelete = async () => { if (!deleteTarget) return; setIsDeleting(true); try { if (deleteTarget === 'requests') await clearRequests(); else if (deleteTarget === 'attendance') await clearAttendance(); else if (deleteTarget === 'students') await clearStudents(); else if (deleteTarget === 'all') await Promise.all([clearStudents(), clearRequests(), clearAttendance(), clearBehaviorRecords(), clearAdminInsights(), clearReferrals()]); window.location.reload(); } catch (e: any) { alert("خطأ: " + e.message); } finally { setIsDeleting(false); setDeleteTarget(null); } };
   
-  // --- NEWS Handlers ---
   const handleGenerateNewsDraft = async () => {
       if (!newNewsTitle && !newNewsContent) {
           alert('يرجى كتابة عنوان الخبر أو بعض النقاط الرئيسية أولاً');
@@ -360,7 +356,7 @@ const Dashboard: React.FC = () => {
                   content: newNewsContent,
                   author: 'الإدارة',
                   isUrgent: isUrgent,
-                  createdAt: new Date().toISOString() // Placeholder
+                  createdAt: new Date().toISOString()
               });
               alert('تم تعديل الخبر بنجاح');
           } else {
@@ -396,7 +392,6 @@ const Dashboard: React.FC = () => {
       setNewNewsTitle(news.title);
       setNewNewsContent(news.content);
       setIsUrgent(news.isUrgent);
-      // Scroll to top of the news form
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -407,7 +402,6 @@ const Dashboard: React.FC = () => {
       setEditingNewsId(null);
   };
 
-  // --- BOT CONTEXT HANDLER ---
   const handleSaveBotContext = async () => {
       setSavingContext(true);
       try {
@@ -451,7 +445,6 @@ const Dashboard: React.FC = () => {
           let extractedText = "";
 
           if (file.name.endsWith('.pdf')) {
-              // PDF Handling
               if (typeof pdfjsLib === 'undefined') {
                   throw new Error("مكتبة PDF غير متوفرة. يرجى تحديث الصفحة.");
               }
@@ -460,7 +453,6 @@ const Dashboard: React.FC = () => {
               const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
               let fullText = '';
 
-              // Iterate pages
               for (let i = 1; i <= pdf.numPages; i++) {
                   const page = await pdf.getPage(i);
                   const textContent = await page.getTextContent();
@@ -508,7 +500,7 @@ const Dashboard: React.FC = () => {
           alert("فشل قراءة الملف: " + err.message);
       } finally {
           setIsProcessingFile(false);
-          e.target.value = ''; // Reset input
+          e.target.value = '';
       }
   };
 
@@ -665,9 +657,9 @@ const Dashboard: React.FC = () => {
                   </div>
 
                   {/* CHARTS */}
-                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm h-[350px]">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm min-h-[350px]">
                       <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Activity className="text-blue-600"/> مؤشر الحضور الأسبوعي</h3>
-                      <ResponsiveContainer width="100%" height="90%">
+                      <ResponsiveContainer width="100%" height={300}>
                           <AreaChart data={attendanceTrendData}>
                               <defs>
                                   <linearGradient id="colorPresence" x1="0" y1="0" x2="0" y2="1">

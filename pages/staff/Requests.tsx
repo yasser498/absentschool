@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, X, Eye, Calendar, Search, User, FileText, RefreshCw, Loader2, MessageCircle, School, Paperclip, History, ChevronDown, ChevronUp } from 'lucide-react';
@@ -103,11 +102,12 @@ const StaffRequests: React.FC = () => {
     [RequestStatus.REJECTED]: { bg: 'bg-red-50', text: 'text-red-700', dot: 'bg-red-500', border: 'border-red-200', label: 'مرفوض' },
   };
 
-  // Fixed regex to handle query params in URL
-  const isImage = (url: string) => /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(url);
-
-  // --- Virtualized Row Component ---
-  // ... (Using same list logic if needed, but here simple grid is used)
+  // Helper function to detect image data types (URL or Base64)
+  const isImage = (url: string) => {
+      if (!url) return false;
+      if (url.startsWith('data:image')) return true;
+      return /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(url);
+  };
   
   if (!currentUser) return null;
 
@@ -333,42 +333,27 @@ const StaffRequests: React.FC = () => {
                  {/* Attachment */}
                  <div>
                     <label className="text-xs font-bold text-slate-400 uppercase block mb-2">المرفقات</label>
-                    {selectedReq.attachmentName ? (
-                       <div>
-                          {selectedReq.attachmentUrl ? (
-                             <>
-                                <a 
-                                  href={selectedReq.attachmentUrl} 
-                                  target="_blank" 
-                                  rel="noreferrer"
-                                  className="flex items-center gap-3 p-3 rounded-xl border border-blue-100 bg-blue-50 hover:bg-blue-100 transition-colors text-blue-900 font-bold text-sm group"
-                                >
-                                   <div className="bg-white p-2 rounded-lg text-blue-500 group-hover:scale-110 transition-transform shadow-sm"><FileText size={18} /></div>
-                                   <div className="flex-1 min-w-0">
-                                       <p className="truncate">{selectedReq.attachmentName}</p>
-                                       <p className="text-[10px] font-normal opacity-70">اضغط لفتح الملف</p>
+                    {selectedReq.attachmentUrl ? (
+                        <div>
+                            <div className="flex items-center gap-3 p-3 rounded-xl border border-blue-100 bg-blue-50 text-blue-900 font-bold text-sm">
+                                <div className="bg-white p-2 rounded-lg text-blue-500 shadow-sm"><FileText size={18} /></div>
+                                <div className="flex-1 min-w-0">
+                                    <a href={selectedReq.attachmentUrl} target="_blank" rel="noreferrer" className="hover:underline truncate block">
+                                        {selectedReq.attachmentName || 'عرض الملف'}
+                                    </a>
+                                </div>
+                            </div>
+                            
+                            {isImage(selectedReq.attachmentUrl) && (
+                               <div className="mt-3 relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                                   <img src={selectedReq.attachmentUrl} alt="Attachment Preview" className="w-full h-auto max-h-64 object-contain" />
+                                   <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => window.open(selectedReq.attachmentUrl, '_blank')}>
+                                       <span className="text-white font-bold flex items-center gap-2"><Eye size={20} /> تكبير الصورة</span>
                                    </div>
-                                </a>
-                                
-                                {/* Image Preview */}
-                                {isImage(selectedReq.attachmentUrl) && (
-                                   <div className="mt-3 relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-                                       <img src={selectedReq.attachmentUrl} alt="Attachment Preview" className="w-full h-auto max-h-48 object-cover" />
-                                       <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => window.open(selectedReq.attachmentUrl, '_blank')}>
-                                           <span className="text-white font-bold flex items-center gap-2"><Eye size={20} /> تكبير الصورة</span>
-                                       </div>
-                                   </div>
-                                )}
-                             </>
-                          ) : (
-                             <p className="text-sm text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-dashed border-slate-200">لا يوجد رابط للمرفق (قد يكون تم حذفه)</p>
-                          )}
-                       </div>
-                    ) : (
-                       <div className="text-sm text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-dashed border-slate-200 flex items-center gap-2">
-                           <X size={16} /> لا يوجد مرفقات
-                       </div>
-                    )}
+                               </div>
+                            )}
+                        </div>
+                    ) : <div className="text-sm text-slate-400 italic bg-slate-50 p-3 rounded-lg border border-dashed border-slate-200">لا يوجد مرفقات</div>}
                  </div>
               </div>
 

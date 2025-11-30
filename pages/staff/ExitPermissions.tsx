@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { LogOut, Plus, Search, Calendar, User, Phone, CheckCircle, Clock, XCircle, Printer, X } from 'lucide-react';
 import { getStudents, addExitPermission, getExitPermissions } from '../../services/storage';
@@ -99,72 +98,77 @@ const ExitPermissions: React.FC = () => {
         @media print {
           body * { visibility: hidden; }
           #exit-report-print, #exit-report-print * { visibility: visible; }
-          #exit-report-print { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; background: white; z-index: 9999; }
+          #exit-report-print { position: absolute; left: 0; top: 0; width: 100%; padding: 0; background: white; z-index: 9999; }
           .no-print { display: none !important; }
         }
       `}</style>
 
       {/* OFFICIAL PRINT VIEW */}
       <div id="exit-report-print" className="hidden" dir="rtl">
-          <div className="flex items-center justify-between px-4 mb-6 border-b-2 border-black pb-4">
-            <div className="text-right font-bold text-sm space-y-1">
-              <p>المملكة العربية السعودية</p>
-              <p>وزارة التعليم</p>
-              <p>إدارة التعليم ....................</p>
-              <p>{SCHOOL_NAME}</p>
+          <div className="print-page-a4">
+            <img src="https://www.raed.net/img?id=1474173" className="print-watermark" alt="Watermark" />
+            <div className="print-header">
+                <div className="print-header-right">
+                    <p>المملكة العربية السعودية</p>
+                    <p>وزارة التعليم</p>
+                    <p>إدارة التعليم ....................</p>
+                    <p>{SCHOOL_NAME}</p>
+                </div>
+                <div className="print-header-center">
+                    <img src="https://www.raed.net/img?id=1474173" className="print-logo" alt="Logo" />
+                </div>
+                <div className="print-header-left">
+                    <p>Ministry of Education</p>
+                    <p>Student Exit Log</p>
+                    <p>{reportDate}</p>
+                </div>
             </div>
-            <div className="flex justify-center">
-              <img src="https://www.raed.net/img?id=1474173" alt="شعار الوزارة" className="h-24 w-auto object-contain" />
+
+            <div className="print-content">
+                <div className="text-center mb-6">
+                    <h1 className="text-2xl font-extrabold underline underline-offset-8 mt-4">بيان استئذان الطلاب اليومي</h1>
+                </div>
+
+                <table className="w-full text-right border-collapse border border-black text-sm mt-4">
+                    <thead>
+                        <tr className="bg-gray-100">
+                            <th className="border border-black p-2 w-10">م</th>
+                            <th className="border border-black p-2">اسم الطالب</th>
+                            <th className="border border-black p-2">الصف / الفصل</th>
+                            <th className="border border-black p-2">ولي الأمر (المستلم)</th>
+                            <th className="border border-black p-2">سبب الاستئذان</th>
+                            <th className="border border-black p-2">المصرح (الموظف)</th>
+                            <th className="border border-black p-2">وقت الخروج</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredPermissions.length > 0 ? (
+                            filteredPermissions.map((p, idx) => (
+                                <tr key={idx}>
+                                    <td className="border border-black p-2 text-center">{idx + 1}</td>
+                                    <td className="border border-black p-2 font-bold">{p.studentName}</td>
+                                    <td className="border border-black p-2">{p.grade} - {p.className}</td>
+                                    <td className="border border-black p-2">{p.parentName}</td>
+                                    <td className="border border-black p-2">{p.reason}</td>
+                                    <td className="border border-black p-2">{p.createdByName || '-'}</td>
+                                    <td className="border border-black p-2 text-center">
+                                        {p.status === 'completed' && p.completedAt 
+                                            ? new Date(p.completedAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}) 
+                                            : 'انتظار'}
+                                    </td>
+                                </tr>
+                            ))
+                        ) : (
+                            <tr><td colSpan={7} className="border border-black p-4 text-center">لا يوجد استئذان اليوم</td></tr>
+                        )}
+                    </tbody>
+                </table>
+
+                <div className="mt-16 flex justify-between px-12 text-lg">
+                    <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>.............................</p></div>
+                    <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
+                </div>
             </div>
-            <div className="text-left font-bold text-sm space-y-1">
-               <p>Ministry of Education</p>
-               <p>Student Exit Log</p>
-               <p>Date: {reportDate}</p>
-            </div>
-          </div>
-
-          <div className="text-center mb-6">
-              <h1 className="text-2xl font-extrabold underline underline-offset-8">بيان استئذان الطلاب اليومي</h1>
-          </div>
-
-          <table className="w-full text-right border-collapse border border-black text-sm">
-              <thead>
-                  <tr className="bg-gray-100">
-                      <th className="border border-black p-2 w-10">م</th>
-                      <th className="border border-black p-2">اسم الطالب</th>
-                      <th className="border border-black p-2">الصف / الفصل</th>
-                      <th className="border border-black p-2">ولي الأمر (المستلم)</th>
-                      <th className="border border-black p-2">سبب الاستئذان</th>
-                      <th className="border border-black p-2">المصرح (الموظف)</th>
-                      <th className="border border-black p-2">وقت الخروج</th>
-                  </tr>
-              </thead>
-              <tbody>
-                  {filteredPermissions.length > 0 ? (
-                      filteredPermissions.map((p, idx) => (
-                          <tr key={idx}>
-                              <td className="border border-black p-2 text-center">{idx + 1}</td>
-                              <td className="border border-black p-2 font-bold">{p.studentName}</td>
-                              <td className="border border-black p-2">{p.grade} - {p.className}</td>
-                              <td className="border border-black p-2">{p.parentName}</td>
-                              <td className="border border-black p-2">{p.reason}</td>
-                              <td className="border border-black p-2">{p.createdByName || '-'}</td>
-                              <td className="border border-black p-2 text-center">
-                                  {p.status === 'completed' && p.completedAt 
-                                    ? new Date(p.completedAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}) 
-                                    : 'انتظار'}
-                              </td>
-                          </tr>
-                      ))
-                  ) : (
-                      <tr><td colSpan={7} className="border border-black p-4 text-center">لا يوجد استئذان اليوم</td></tr>
-                  )}
-              </tbody>
-          </table>
-
-          <div className="mt-16 flex justify-between px-12 text-lg">
-              <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>.............................</p></div>
-              <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
           </div>
       </div>
 

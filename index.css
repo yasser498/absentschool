@@ -36,13 +36,23 @@ select option {
 .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
 
 /* ========================================= */
-/* PRINT STYLES - OFFICIAL UNIFIED TEMPLATE  */
+/* PRINT STYLES - PROFESSIONAL A4 TEMPLATE   */
 /* ========================================= */
 
 @media print {
   @page {
     size: A4;
-    margin: 5mm;
+    margin: 4mm; /* Exact 4mm margin */
+  }
+
+  html, body {
+    width: 210mm;
+    height: 297mm;
+    margin: 0;
+    padding: 0;
+    background-color: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   /* Hide everything by default */
@@ -50,58 +60,83 @@ select option {
     visibility: hidden;
   }
 
-  /* Define the print container IDs that should be visible */
+  /* Define visible print containers */
   #gate-report, #gate-report *,
   #print-area, #print-area *,
   #staff-report-print, #staff-report-print *,
   #print-container, #print-container *,
-  #session-report-print, #session-report-print * {
+  #session-report-print, #session-report-print *,
+  #exit-report-print, #exit-report-print * {
     visibility: visible;
   }
 
-  /* Positioning the print container */
+  /* Print Container Positioning */
   #gate-report,
   #print-area,
   #staff-report-print,
   #print-container,
-  #session-report-print {
-    position: fixed;
+  #session-report-print,
+  #exit-report-print {
+    position: absolute;
     left: 0;
     top: 0;
     width: 100%;
-    height: 100%;
     margin: 0;
-    padding: 20px;
+    padding: 0;
     background: white !important;
     z-index: 99999;
     display: block !important;
     color: black !important;
   }
 
-  /* Unified Header Styling */
+  /* Official A4 Page Frame */
+  .print-page-a4 {
+    position: relative;
+    width: 100%;
+    min-height: 290mm; /* Ensure it fills the page */
+    padding: 10mm; 
+    box-sizing: border-box;
+    background: white;
+    overflow: hidden;
+  }
+
+  /* Watermark Styling - Professional Look */
+  .print-watermark {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100mm; 
+    height: auto;
+    opacity: 0.06; /* Very subtle */
+    z-index: -1;
+    pointer-events: none;
+    filter: grayscale(100%);
+  }
+
+  /* Ensure content sits above watermark */
+  .print-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Header Styling */
   .print-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 2px solid #000;
-    padding-bottom: 10px;
-    margin-bottom: 20px;
+    padding-bottom: 15px;
+    margin-bottom: 30px;
     width: 100%;
   }
-
+  
   .print-header-right, .print-header-left {
-    text-align: center;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: bold;
-    line-height: 1.6;
-    width: 25%;
+    line-height: 1.5;
   }
-
-  .print-header-center {
-    text-align: center;
-    flex: 1;
-  }
-
+  
   .print-logo {
     height: 80px;
     width: auto;
@@ -124,12 +159,11 @@ select option {
   }
 
   th {
-    background-color: #f3f3f3 !important;
+    background-color: #f0f0f0 !important;
     font-weight: bold !important;
-    -webkit-print-color-adjust: exact;
   }
 
-  /* Hide elements marked as no-print */
+  /* Hide no-print elements */
   .no-print {
     display: none !important;
   }

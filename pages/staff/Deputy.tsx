@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Briefcase, AlertTriangle, Plus, Search, Loader2, X, Send, Sparkles, 
@@ -50,15 +49,16 @@ const ReferralStepper = ({ status }: { status: string }) => {
 };
 
 const OfficialHeader = ({ schoolName }: { schoolName: string }) => (
-  <div className="mb-6 w-full">
+  <div className="mb-6 w-full print-content">
     <div className="flex items-center justify-between px-4">
       <div className="text-right font-bold text-sm space-y-1">
         <p>المملكة العربية السعودية</p>
         <p>وزارة التعليم</p>
         <p>إدارة التعليم ....................</p>
         <p>{schoolName}</p>
+        <p>وكالة شؤون الطلاب</p>
       </div>
-      <div className="flex justify-center">
+      <div className="flex justify-center flex-1">
         <img
           src="https://www.raed.net/img?id=1474173"
           alt="شعار وزارة التعليم"
@@ -66,8 +66,10 @@ const OfficialHeader = ({ schoolName }: { schoolName: string }) => (
         />
       </div>
       <div className="text-left font-bold text-sm space-y-1">
+         <p>Kingdom of Saudi Arabia</p>
          <p>Ministry of Education</p>
          <p>Student Affairs</p>
+         <img src="https://upload.wikimedia.org/wikipedia/en/d/d4/Vision_2030_Kingdom_of_Saudi_Arabia_logo.svg" alt="Vision 2030" className="h-10 mt-2 object-contain float-left grayscale opacity-80" />
       </div>
     </div>
     <hr className="border-t-2 border-black mt-4" />
@@ -373,13 +375,11 @@ const StaffDeputy: React.FC = () => {
     <>
       <style>
         {`
-          @page { size: A4; margin: 15mm; }
           @media print {
             body * { visibility: hidden; }
             #print-container, #print-container * { visibility: visible; }
             #print-container { position: absolute; left: 0; top: 0; width: 100%; background: white; padding: 0; z-index: 9999; }
             .no-print { display: none !important; }
-            .print-border { border: 2px solid #000; padding: 20px; min-height: 260mm; }
           }
         `}
       </style>
@@ -387,60 +387,89 @@ const StaffDeputy: React.FC = () => {
       {/* --- PRINT CONTAINER --- */}
       <div id="print-container" className="hidden print:block text-[14px] leading-relaxed" dir="rtl">
         {printMode === 'commitment' && recordToPrint && (
-          <div className="print-border">
+          <div className="print-page-a4">
+            {/* Watermark Image */}
+            <img src="https://www.raed.net/img?id=1474173" className="print-watermark" alt="Watermark" />
+            
             <OfficialHeader schoolName={SCHOOL_NAME} />
-            <h1 className="text-3xl font-extrabold text-center mb-10 underline underline-offset-8">تعهد خطي (مخالفة سلوكية)</h1>
-             <div className="text-right space-y-8 text-xl font-medium px-4">
-              <p>أقر أنا الطالب/ة: <strong>{recordToPrint.studentName}</strong> بالصف: <strong>{recordToPrint.grade} - {recordToPrint.className}</strong></p>
-              <p>بأنني قمت بالمخالفة التالية:</p>
-              <div className="bg-gray-50 p-4 border border-gray-400 rounded-lg text-center font-bold text-2xl">{recordToPrint.violationName}</div>
-              <p>وأتعهد بعدم تكرار هذا السلوك مستقبلاً، والالتزام بالأنظمة والتعليمات المدرسية. وفي حال التكرار، أتحمل كافة الإجراءات النظامية.</p>
+            
+            <div className="print-content">
+                <h1 className="text-3xl font-extrabold text-center mb-10 underline underline-offset-8 mt-12">تعهد خطي (مخالفة سلوكية)</h1>
+                <div className="text-right space-y-10 text-xl font-medium px-8 mt-12">
+                  <p>أقر أنا الطالب/ة: <strong>{recordToPrint.studentName}</strong> بالصف: <strong>{recordToPrint.grade} - {recordToPrint.className}</strong></p>
+                  <p>بأنني قمت بالمخالفة التالية:</p>
+                  <div className="bg-gray-50/50 p-6 border border-gray-400 rounded-lg text-center font-bold text-2xl">{recordToPrint.violationName}</div>
+                  <p className="leading-loose">وأتعهد بعدم تكرار هذا السلوك مستقبلاً، والالتزام بالأنظمة والتعليمات المدرسية. وفي حال التكرار، أتحمل كافة الإجراءات النظامية المترتبة على ذلك وفق لائحة السلوك والمواظبة.</p>
+                </div>
+                <div className="flex justify-between mt-32 px-12 text-lg">
+                  <div className="text-center"><p className="font-bold mb-8">الطالب/ة</p><p>.............................</p></div>
+                  <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p><p className="mt-4">التوقيع: .............................</p></div>
+                </div>
+                <div className="mt-16 text-center text-sm">حرر بتاريخ: {new Date().toLocaleDateString('ar-SA')}</div>
             </div>
-             <div className="flex justify-between mt-32 px-12 text-lg">
-              <div className="text-center"><p className="font-bold mb-8">الطالب/ة</p><p>.............................</p></div>
-              <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p><p className="mt-4">التوقيع: .............................</p></div>
-            </div>
-            <div className="mt-16 text-center text-sm">حرر بتاريخ: {new Date().toLocaleDateString('ar-SA')}</div>
           </div>
         )}
         
         {printMode === 'summons' && recordToPrint && (
-          <div className="print-border">
+          <div className="print-page-a4">
+            <img src="https://www.raed.net/img?id=1474173" className="print-watermark" alt="Watermark" />
+            
             <OfficialHeader schoolName={SCHOOL_NAME} />
-            <h2 className="text-2xl font-extrabold text-center underline mb-10">خطاب استدعاء ولي أمر</h2>
-            <div className="text-xl leading-loose space-y-6 px-4 font-medium">
-              <p>المكرم ولي أمر الطالب.. وفقه الله</p>
-              <p>السلام عليكم ورحمة الله وبركاته،،،</p>
-              <p>نفيدكم بأنه تم رصد مخالفة سلوكية على ابنكم <strong>({recordToPrint.studentName})</strong> وهي: <br/><strong className="text-red-900 underline">{recordToPrint.violationName}</strong>.</p>
-              <p>لذا نأمل منكم التكرم بالحضور للمدرسة يوم ................................ الموافق ...../...../.....هـ لمناقشة وضع الطالب.</p>
-            </div>
-            <div className="flex justify-between mt-32 px-12 text-lg">
-              <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
-              <div className="text-center"><p className="font-bold mb-8">قائد المدرسة</p><p>.............................</p></div>
+            
+            <div className="print-content">
+                <h2 className="text-2xl font-extrabold text-center underline mb-10 mt-12">خطاب استدعاء ولي أمر</h2>
+                <div className="text-xl leading-loose space-y-8 px-8 font-medium mt-12">
+                  <p>المكرم ولي أمر الطالب.. وفقه الله</p>
+                  <p>السلام عليكم ورحمة الله وبركاته،،،</p>
+                  <p>نفيدكم بأنه تم رصد مخالفة سلوكية على ابنكم <strong>({recordToPrint.studentName})</strong> بالصف <strong>({recordToPrint.grade})</strong>.</p>
+                  <p>نوع المخالفة: <strong className="text-red-900 underline">{recordToPrint.violationName}</strong>.</p>
+                  <p>لذا نأمل منكم التكرم بالحضور للمدرسة يوم ................................ الموافق ...../...../.....هـ لمناقشة وضع الطالب السلوكي والتعاون معنا في تقويمه.</p>
+                  <p className="text-center mt-8 font-bold">شاكرين ومقدرين حسن تعاونكم،،،</p>
+                </div>
+                <div className="flex justify-between mt-32 px-12 text-lg">
+                  <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
+                  <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
+                </div>
             </div>
           </div>
         )}
 
         {printMode === 'daily' && (
-          <div className="print-border">
+          <div className="print-page-a4">
+            <img src="https://www.raed.net/img?id=1474173" className="print-watermark" alt="Watermark" />
             <OfficialHeader schoolName={SCHOOL_NAME} />
-            <h1 className="text-2xl font-bold text-center mb-6">تقرير المخالفات السلوكية اليومي</h1>
-            <p className="text-center mb-6 text-lg">التاريخ: <strong>{reportDate}</strong></p>
-            <table className="w-full text-right border-collapse border border-black text-sm">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border border-black p-3">الطالب</th>
-                  <th className="border border-black p-3">الصف</th>
-                  <th className="border border-black p-3">المخالفة</th>
-                  <th className="border border-black p-3">الإجراء</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dailyRecords.map((rec, idx) => (
-                    <tr key={idx}><td className="border border-black p-3">{rec.studentName}</td><td className="border border-black p-3">{rec.grade}</td><td className="border border-black p-3">{rec.violationName}</td><td className="border border-black p-3">{rec.actionTaken}</td></tr>
-                ))}
-              </tbody>
-            </table>
+            
+            <div className="print-content">
+                <h1 className="text-2xl font-bold text-center mb-6 mt-4">تقرير المخالفات السلوكية اليومي</h1>
+                <p className="text-center mb-6 text-lg">التاريخ: <strong>{reportDate}</strong></p>
+                <table className="w-full text-right border-collapse border border-black text-sm">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border border-black p-3">م</th>
+                      <th className="border border-black p-3">الطالب</th>
+                      <th className="border border-black p-3">الصف</th>
+                      <th className="border border-black p-3">المخالفة</th>
+                      <th className="border border-black p-3">الإجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailyRecords.length > 0 ? dailyRecords.map((rec, idx) => (
+                        <tr key={idx}>
+                            <td className="border border-black p-3">{idx + 1}</td>
+                            <td className="border border-black p-3 font-bold">{rec.studentName}</td>
+                            <td className="border border-black p-3">{rec.grade}</td>
+                            <td className="border border-black p-3">{rec.violationName}</td>
+                            <td className="border border-black p-3">{rec.actionTaken}</td>
+                        </tr>
+                    )) : <tr><td colSpan={5} className="border border-black p-4 text-center">لا يوجد مخالفات مسجلة اليوم</td></tr>}
+                  </tbody>
+                </table>
+                
+                <div className="mt-16 flex justify-between px-12 text-lg">
+                  <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
+                  <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
+                </div>
+            </div>
           </div>
         )}
       </div>

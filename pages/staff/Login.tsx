@@ -31,7 +31,8 @@ const StaffLogin: React.FC = () => {
     try {
       // Simulate slight network delay for better UX feel
       await new Promise(resolve => setTimeout(resolve, 600));
-      const user = await authenticateStaff(passcode);
+      // Trim passcode to remove accidental spaces
+      const user = await authenticateStaff(passcode.trim());
       if (user) {
         localStorage.setItem('ozr_staff_session', JSON.stringify(user));
         navigate('/staff/home', { replace: true });
@@ -87,7 +88,7 @@ const StaffLogin: React.FC = () => {
                               onChange={(e) => { setPasscode(e.target.value); setError(''); }}
                               className="w-full py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-50 outline-none transition-all text-center text-3xl font-bold text-slate-800 tracking-[0.5em] font-mono placeholder:text-slate-300 placeholder:tracking-normal placeholder:font-sans shadow-inner"
                               placeholder="••••"
-                              maxLength={8}
+                              maxLength={20}
                               autoFocus
                               disabled={loading}
                           />

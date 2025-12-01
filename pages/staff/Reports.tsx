@@ -28,7 +28,7 @@ const StaffReports: React.FC = () => {
   const [loading, setLoading] = useState(true);
   
   // School Identity
-  const SCHOOL_NAME = localStorage.getItem('school_name') || "المدرسة";
+  const SCHOOL_NAME = localStorage.getItem('school_name') || "مدرسة عماد الدين زنكي المتوسطة";
   const SCHOOL_LOGO = localStorage.getItem('school_logo') || "";
 
   useEffect(() => {

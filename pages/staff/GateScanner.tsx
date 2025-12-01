@@ -170,10 +170,14 @@ const GateScanner: React.FC = () => {
 
           let foundExit = todaysExits.find(e => e.id === exitId);
           if (!foundExit) {
+              // Try fetching from DB if not in daily list (maybe old)
               const freshExit = await getExitPermissionById(exitId);
               if (freshExit) {
-                  foundExit = freshExit;
-                  setTodaysExits(prev => [...prev, freshExit]); 
+                  // Only consider it valid if it was created today OR is still pending
+                  const isToday = freshExit.createdAt.startsWith(new Date().toISOString().split('T')[0]);
+                  if (isToday || freshExit.status === 'pending_pickup') {
+                      foundExit = freshExit;
+                  }
               }
           }
 
@@ -183,12 +187,20 @@ const GateScanner: React.FC = () => {
                   setIsAlreadyProcessed(true);
               }
               setScanLoading(false);
-              return;
+              return; // Stop here if exit found
           }
 
           // 2. Visitor Appointment Check
+          // The QR code for visitors is just the UUID string
           let visitId = decodedText;
-          const foundVisit = todaysVisits.find(v => v.id === visitId);
+          let foundVisit = todaysVisits.find(v => v.id === visitId);
+          
+          if (!foundVisit) {
+             // Try fetching refreshing data
+             const visits = await getDailyAppointments(reportDate);
+             setTodaysVisits(visits);
+             foundVisit = visits.find(v => v.id === visitId);
+          }
           
           if (foundVisit) {
               setScannedAppointment(foundVisit);

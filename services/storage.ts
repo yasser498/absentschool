@@ -1,3 +1,4 @@
+
 import { supabase } from '../supabaseClient';
 import { 
   Appointment, AppointmentSlot, 
@@ -67,7 +68,6 @@ export const generateSmartContent = async (prompt: string, systemInstruction?: s
   }
 };
 
-// ... (Keep existing specialized AI functions like generateExecutiveReport, generateSmartStudentReport etc.) ...
 // Helper to get Counselor Name
 const getCounselorName = async () => {
     const { data } = await supabase.from('staff').select('name, permissions');
@@ -389,7 +389,9 @@ export const updateStaffUser = async (user: StaffUser) => { const { error } = aw
 export const deleteStaffUser = async (id: string) => { const { error } = await supabase.from('staff').delete().eq('id', id); if (error) throw new Error(error.message); };
 export const authenticateStaff = async (passcode: string): Promise<StaffUser | undefined> => { const { data, error } = await supabase.from('staff').select('*').eq('passcode', passcode).single(); if (error || !data) return undefined; return mapStaffFromDB(data); };
 export const getAvailableClassesForGrade = async (grade: string) => { const { data } = await supabase.from('students').select('class_name').eq('grade', grade); if (!data) return []; return Array.from(new Set(data.map((s: any) => s.class_name))).sort(); };
+
 export const saveAttendanceRecord = async (record: AttendanceRecord) => { 
+    // 1. Save or Update the Record
     const { data: existing } = await supabase.from('attendance').select('id').eq('date', record.date).eq('grade', record.grade).eq('class_name', record.className).single();
     if (existing) {
         const { error } = await supabase.from('attendance').update(mapAttendanceToDB(record)).eq('id', existing.id);
@@ -398,7 +400,37 @@ export const saveAttendanceRecord = async (record: AttendanceRecord) => {
         const { error } = await supabase.from('attendance').insert(mapAttendanceToDB(record));
         if (error) throw new Error(error.message);
     }
+
+    // 2. TRIGGER REAL-TIME NOTIFICATIONS
+    // We iterate through the student records to check for Absence or Lateness
+    const notificationBatch: any[] = [];
+    
+    record.records.forEach(stu => {
+        if (stu.status === AttendanceStatus.ABSENT) {
+            notificationBatch.push({
+                target_user_id: stu.studentId, // We use studentId to target the parent
+                type: 'alert',
+                title: 'تنبيه غياب',
+                message: `نحيطكم علماً بأن الطالب ${stu.studentName} تغيب عن المدرسة بتاريخ ${record.date}. يرجى تقديم عذر عبر البوابة.`
+            });
+        } else if (stu.status === AttendanceStatus.LATE) {
+            notificationBatch.push({
+                target_user_id: stu.studentId,
+                type: 'info',
+                title: 'تنبيه تأخر',
+                message: `تم رصد تأخر الطالب ${stu.studentName} عن الطابور الصباحي بتاريخ ${record.date}.`
+            });
+        }
+    });
+
+    // Send notifications in bulk if there are any
+    if (notificationBatch.length > 0) {
+        // Warning: This could be large for a whole school, but for a class it's fine.
+        const { error } = await supabase.from('notifications').insert(notificationBatch);
+        if (error) console.error("Failed to send attendance notifications:", error);
+    }
 };
+
 export const getAttendanceRecordForClass = async (date: string, grade: string, className: string) => { const { data, error } = await supabase.from('attendance').select('*').eq('date', date).eq('grade', grade).eq('class_name', className).single(); if (error) return null; return mapAttendanceFromDB(data); };
 export const getAttendanceRecords = async () => { const { data, error } = await supabase.from('attendance').select('*'); if (error) return []; return data.map(mapAttendanceFromDB); };
 export const getStudentAttendanceHistory = async (studentId: string, grade: string, className: string) => {
@@ -493,7 +525,7 @@ export const getBehaviorRecords = async (studentId?: string) => {
 export const addBehaviorRecord = async (record: BehaviorRecord) => { 
     const { error } = await supabase.from('behaviors').insert(mapBehaviorToDB(record)); 
     if (error) throw new Error(error.message); 
-    await createNotification(record.studentId, 'alert', 'مخالفة سلوكية', `تم تسجيل مخالفة: ${record.violationName}`);
+    await createNotification(record.studentId, 'alert', 'مخالفة سلوكية', `تم تسجيل مخالفة: ${record.violationName} - ${record.actionTaken}`);
 };
 export const updateBehaviorRecord = async (record: BehaviorRecord) => { const { error } = await supabase.from('behaviors').update(mapBehaviorToDB(record)).eq('id', record.id); if (error) throw new Error(error.message); };
 export const deleteBehaviorRecord = async (id: string) => { const { error } = await supabase.from('behaviors').delete().eq('id', id); if (error) throw new Error(error.message); };
@@ -510,8 +542,9 @@ export const getStudentObservations = async (studentId?: string, type?: string) 
 export const addStudentObservation = async (obs: StudentObservation) => { 
     const { error } = await supabase.from('observations').insert(mapObservationToDB(obs)); 
     if (error) throw new Error(error.message); 
-    if (obs.type === 'positive') await createNotification(obs.studentId, 'success', 'تعزيز إيجابي', obs.content);
+    if (obs.type === 'positive') await createNotification(obs.studentId, 'success', 'تعزيز إيجابي', `رائع! ${obs.content}`);
     else if (obs.type === 'behavioral') await createNotification(obs.studentId, 'alert', 'ملاحظة سلوكية', obs.content);
+    else await createNotification(obs.studentId, 'info', 'ملاحظة مدرسية', obs.content);
 };
 export const updateStudentObservation = async (id: string, content: string, type: any) => { await supabase.from('observations').update({ content, type }).eq('id', id); };
 export const deleteStudentObservation = async (id: string) => { await supabase.from('observations').delete().eq('id', id); };
@@ -526,6 +559,7 @@ export const getAdminInsights = async (targetRole?: 'deputy' | 'counselor' | 'te
 export const sendAdminInsight = async (targetRole: 'deputy' | 'counselor' | 'teachers', content: string) => {
     const { error } = await supabase.from('admin_insights').insert({ target_role: targetRole, content });
     if (error) throw new Error(error.message);
+    // You might want to notify all staff of a certain role here, but that requires selecting all their IDs.
 };
 export const clearAdminInsights = async () => { await supabase.from('admin_insights').delete().neq('id', '0'); };
 export const addReferral = async (referral: Referral) => { const { error } = await supabase.from('referrals').insert(mapReferralToDB(referral)); if (error) throw new Error(error.message); };
@@ -576,7 +610,16 @@ export const addExitPermission = async (perm: Omit<ExitPermission, 'id' | 'statu
 export const getExitPermissions = async (date?: string, status?: string) => { let query = supabase.from('exit_permissions').select('*'); if (date) query = query.gte('created_at', `${date}T00:00:00`).lte('created_at', `${date}T23:59:59`); if (status) query = query.eq('status', status); const { data, error } = await query.order('created_at', { ascending: false }); if (error) return []; return data.map(mapExitFromDB); };
 export const getExitPermissionById = async (id: string): Promise<ExitPermission | null> => { const { data, error } = await supabase.from('exit_permissions').select('*').eq('id', id).single(); if (error) return null; return mapExitFromDB(data); };
 export const getMyExitPermissions = async (studentIds: string[]) => { if (studentIds.length === 0) return []; const { data, error } = await supabase.from('exit_permissions').select('*').in('student_id', studentIds).order('created_at', { ascending: false }); if (error) return []; return data.map(mapExitFromDB); };
-export const completeExitPermission = async (id: string) => { const { error } = await supabase.from('exit_permissions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id); if (error) throw new Error(error.message); };
+export const completeExitPermission = async (id: string) => { 
+    const { error } = await supabase.from('exit_permissions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id); 
+    if (error) throw new Error(error.message); 
+    
+    // Notify Parent
+    const { data: perm } = await supabase.from('exit_permissions').select('student_id, student_name').eq('id', id).single();
+    if (perm) {
+        await createNotification(perm.student_id, 'info', 'خروج طالب', `تم تسجيل خروج الطالب ${perm.student_name} من البوابة الآن.`);
+    }
+};
 
 export const getAvailableSlots = async (date?: string) => { let query = supabase.from('appointment_slots').select('*'); if (date) query = query.eq('date', date); else { const today = new Date().toISOString().split('T')[0]; query = query.gte('date', today); } const { data, error } = await query.order('date', { ascending: true }).order('start_time', { ascending: true }); if (error) return []; return data.map((s: any) => ({ id: s.id, date: s.date, startTime: s.start_time, endTime: s.end_time, maxCapacity: s.max_capacity, currentBookings: s.current_bookings })); };
 export const generateDefaultAppointmentSlots = async (date: string) => { 
@@ -602,11 +645,64 @@ export const updateAppointmentSlot = async (slot: AppointmentSlot) => { const { 
 export const deleteAppointmentSlot = async (id: string) => { const { error } = await supabase.from('appointment_slots').delete().eq('id', id); if (error) throw new Error(error.message); };
 export const bookAppointment = async (appt: Omit<Appointment, 'id' | 'status' | 'createdAt'>) => { const { data: slot, error: slotError } = await supabase.from('appointment_slots').select('*').eq('id', appt.slotId).single(); if (slotError || !slot) throw new Error("الموعد غير موجود"); if (slot.current_bookings >= slot.max_capacity) throw new Error("عفواً، اكتمل العدد لهذا الموعد"); const { data: newAppt, error: bookError } = await supabase.from('appointments').insert({ slot_id: appt.slotId, student_id: appt.studentId, student_name: appt.studentName, parent_name: appt.parentName, parent_civil_id: appt.parentCivilId, visit_reason: appt.visitReason }).select().single(); if (bookError) throw new Error(bookError.message); await supabase.from('appointment_slots').update({ current_bookings: slot.current_bookings + 1 }).eq('id', appt.slotId); return { id: newAppt.id, slotId: newAppt.slot_id, studentId: newAppt.student_id, studentName: newAppt.student_name, parentName: newAppt.parent_name, parentCivilId: newAppt.parent_civil_id, visitReason: newAppt.visit_reason, status: newAppt.status, createdAt: newAppt.created_at, slot: { id: slot.id, date: slot.date, startTime: slot.start_time, endTime: slot.end_time, maxCapacity: slot.max_capacity, currentBookings: slot.current_bookings + 1 } }; };
 export const getMyAppointments = async (parentCivilId: string) => { const { data, error } = await supabase.from('appointments').select(`*, slot:appointment_slots(*)`).eq('parent_civil_id', parentCivilId).order('created_at', { ascending: false }); if (error) return []; return data.map((a: any) => ({ id: a.id, slotId: a.slot_id, studentId: a.student_id, studentName: a.student_name, parentName: a.parent_name, parentCivilId: a.parent_civil_id, visitReason: a.visit_reason, status: a.status, arrivedAt: a.arrived_at, createdAt: a.created_at, slot: a.slot ? { id: a.slot.id, date: a.slot.date, startTime: a.slot.start_time, endTime: a.slot.end_time, maxCapacity: a.slot.max_capacity, currentBookings: a.slot.current_bookings } : undefined })); };
-export const getDailyAppointments = async (date?: string) => { let query = supabase.from('appointments').select(`*, slot:appointment_slots(*)`); const { data, error } = await query.order('created_at', { ascending: false }); if (error) return []; const mapped = data.map((a: any) => ({ id: a.id, slotId: a.slot_id, studentId: a.student_id, studentName: a.student_name, parentName: a.parent_name, parentCivilId: a.parent_civil_id, visitReason: a.visit_reason, status: a.status, arrivedAt: a.arrived_at, createdAt: a.created_at, slot: a.slot ? { id: a.slot.id, date: a.slot.date, startTime: a.slot.start_time, endTime: a.slot.end_time } : undefined })); if (date) { return mapped.filter((a: Appointment) => a.slot?.date === date); } return mapped; };
-export const checkInVisitor = async (appointmentId: string) => { const { error } = await supabase.from('appointments').update({ status: 'completed', arrived_at: new Date().toISOString() }).eq('id', appointmentId); if (error) throw new Error(error.message); };
+export const getDailyAppointments = async (date?: string) => { 
+    let query = supabase.from('appointments').select(`*, slot:appointment_slots(*)`); 
+    const { data, error } = await query.order('created_at', { ascending: false }); 
+    if (error) return []; 
+    
+    // Map with type safety for joined slot
+    const mapped = data.map((a: any) => ({ 
+        id: a.id, 
+        slotId: a.slot_id, 
+        studentId: a.student_id, 
+        studentName: a.student_name, 
+        parentName: a.parent_name, 
+        parentCivilId: a.parent_civil_id, 
+        visitReason: a.visit_reason, 
+        status: a.status, 
+        arrivedAt: a.arrived_at, // Ensure this field is mapped
+        createdAt: a.created_at, 
+        slot: a.slot ? { 
+            id: a.slot.id, 
+            date: a.slot.date, 
+            startTime: a.slot.start_time, 
+            endTime: a.slot.end_time 
+        } : undefined 
+    })); 
+    
+    if (date) { 
+        return mapped.filter((a: Appointment) => a.slot?.date === date); 
+    } 
+    return mapped; 
+};
+export const checkInVisitor = async (appointmentId: string) => { 
+    // Update status AND arrived_at timestamp
+    const { error } = await supabase.from('appointments').update({ 
+        status: 'completed', 
+        arrived_at: new Date().toISOString() 
+    }).eq('id', appointmentId); 
+    
+    if (error) throw new Error(error.message); 
+    
+    // Notify Parent/Student (using studentId for targeting)
+    const { data: appt } = await supabase.from('appointments').select('student_id, parent_name').eq('id', appointmentId).single();
+    if(appt) {
+        await createNotification(appt.student_id, 'success', 'تسجيل دخول', `تم تسجيل دخول ولي الأمر ${appt.parent_name} للمدرسة.`);
+    }
+};
 
 export const getSchoolNews = async () => { const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, title: n.title, content: n.content, author: n.author, isUrgent: n.is_urgent, createdAt: n.created_at })); };
-export const addSchoolNews = async (news: Omit<SchoolNews, 'id' | 'createdAt'>) => { const { error } = await supabase.from('news').insert({ title: news.title, content: news.content, author: news.author, is_urgent: news.isUrgent }); if (error) throw new Error(error.message); };
+export const addSchoolNews = async (news: Omit<SchoolNews, 'id' | 'createdAt'>) => { 
+    const { error } = await supabase.from('news').insert({ title: news.title, content: news.content, author: news.author, is_urgent: news.isUrgent }); 
+    if (error) throw new Error(error.message); 
+    
+    // Auto-Notify for Urgent News
+    if (news.isUrgent) {
+        // Warning: This creates a notification row without a specific target, meaning it's a "Global" alert.
+        // A smarter way is to have a special target like "ALL" which the client listens to.
+        await createNotification('ALL', 'alert', 'خبر عاجل', `${news.title}: ${news.content}`);
+    }
+};
 export const updateSchoolNews = async (news: SchoolNews) => { const { error } = await supabase.from('news').update({ title: news.title, content: news.content, is_urgent: news.isUrgent }).eq('id', news.id); if (error) throw new Error(error.message); };
 export const deleteSchoolNews = async (id: string) => { const { error } = await supabase.from('news').delete().eq('id', id); if (error) throw new Error(error.message); };
 
@@ -615,6 +711,8 @@ export const getParentChildren = async (parentCivilId: string): Promise<Student[
 export const addStudentPoints = async (studentId: string, points: number, reason: string, type: 'behavior' | 'attendance' | 'academic') => { const { error } = await supabase.from('student_points').insert({ student_id: studentId, points, reason, type }); if (error) throw new Error(error.message); await createNotification(studentId, 'info', 'نقاط جديدة', `تم إضافة ${points} نقطة لرصيدك: ${reason}`); };
 export const getStudentPoints = async (studentId: string): Promise<{total: number, history: StudentPoint[]}> => { const { data, error } = await supabase.from('student_points').select('*').eq('student_id', studentId).order('created_at', { ascending: false }); if (error) return { total: 0, history: [] }; const total = data.reduce((sum: number, item: any) => sum + item.points, 0); const history = data.map((p: any) => ({ id: p.id, studentId: p.student_id, points: p.points, reason: p.reason, type: p.type, createdAt: p.created_at })); return { total, history }; };
 export const getTopStudents = async (limit = 5) => { const { data, error } = await supabase.from('student_points').select('student_id, points'); if (error) return []; const totals: Record<string, number> = {}; data.forEach((row: any) => { totals[row.student_id] = (totals[row.student_id] || 0) + row.points; }); const topIds = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, limit); const result = []; for (const [sid, score] of topIds) { const student = await getStudentByCivilId(sid); if (student) result.push({ ...student, points: score }); } return result; };
-export const createNotification = async (targetId: string, type: 'alert'|'info'|'success', title: string, message: string) => { await supabase.from('notifications').insert({ target_user_id: targetId, type, title, message }); };
+export const createNotification = async (targetId: string, type: 'alert'|'info'|'success', title: string, message: string) => { 
+    await supabase.from('notifications').insert({ target_user_id: targetId, type, title, message }); 
+};
 export const getNotifications = async (targetId: string) => { const { data, error } = await supabase.from('notifications').select('*').eq('target_user_id', targetId).order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, targetUserId: n.target_user_id, title: n.title, message: n.message, isRead: n.is_read, type: n.type, createdAt: n.created_at })); };
 export const markNotificationRead = async (id: string) => { await supabase.from('notifications').update({ is_read: true }).eq('id', id); };

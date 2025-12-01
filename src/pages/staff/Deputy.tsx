@@ -5,7 +5,7 @@ import {
   User, FileWarning, Check, BarChart2, Printer, TrendingUp, Filter, 
   Trash2, Edit, ArrowRight, LayoutGrid, FileText, School, Inbox, ChevronLeft,
   Calendar, AlertCircle, PieChart as PieIcon, List, Activity, ShieldAlert, Gavel, Forward, CheckCircle, Phone, Clock,
-  Medal, Star, ClipboardList, GitCommit, Eye, ArrowUpRight, CheckSquare, FileBadge, PenTool, Wand2, ChevronRight
+  Medal, Star, ClipboardList, GitCommit, Eye, ArrowUpRight, CheckSquare, FileBadge, PenTool, Wand2, ChevronRight, Gavel as HammerIcon
 } from 'lucide-react';
 import { 
   getStudents, 
@@ -72,6 +72,7 @@ const StaffDeputy: React.FC = () => {
   const [records, setRecords] = useState<BehaviorRecord[]>([]);
   const [referrals, setReferrals] = useState<Referral[]>([]); 
   const [riskList, setRiskList] = useState<any[]>([]); 
+  // Positive behavior data
   const [positiveObservations, setPositiveObservations] = useState<StudentObservation[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -111,7 +112,11 @@ const StaffDeputy: React.FC = () => {
   const [recordToPrint, setRecordToPrint] = useState<BehaviorRecord | null>(null);
   const [studentToPrint, setStudentToPrint] = useState<Student | null>(null); 
   const [absenceDatesToPrint, setAbsenceDatesToPrint] = useState<string[]>([]);
+  const [certificateData, setCertificateData] = useState<{reason: string} | null>(null);
   const [referralToPrint, setReferralToPrint] = useState<Referral | null>(null);
+
+  // Search
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     const session = localStorage.getItem('ozr_staff_session');
@@ -383,7 +388,7 @@ const StaffDeputy: React.FC = () => {
 
   const handleFinalizeReferral = async () => {
       if (!referralToClose || !closeDecision.trim()) return;
-      await updateReferralStatus(referralToClose.id, 'resolved', `[قرار الوكيل]: ${closeDecision}`); 
+      await updateReferralStatus(referralToClose.id, 'resolved', undefined); 
       setShowCloseModal(false);
       fetchData();
       alert("تم اعتماد القرار وإغلاق الحالة.");
@@ -424,121 +429,6 @@ const StaffDeputy: React.FC = () => {
                     </div>
                 </div>
             </div>
-            )}
-
-            {printMode === 'referral_report' && referralToPrint && (
-                <div>
-                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="تقرير إحالة طالب" />
-                    <div className="mt-6 px-4">
-                        <h1 className="official-title">نموذج إحالة للموجه الطلابي</h1>
-                        <div className="border-2 border-black p-6 space-y-6 text-lg">
-                            <div className="flex justify-between">
-                                <p><strong>اسم الطالب:</strong> {referralToPrint.studentName}</p>
-                                <p><strong>الصف:</strong> {referralToPrint.grade} - {referralToPrint.className}</p>
-                            </div>
-                            <hr className="border-black"/>
-                            <div>
-                                <p className="font-bold mb-2">سبب الإحالة:</p>
-                                <p>{referralToPrint.reason}</p>
-                            </div>
-                            {referralToPrint.outcome && (
-                                <>
-                                <hr className="border-black"/>
-                                <div>
-                                    <p className="font-bold mb-2">رأي / إجراء الموجه الطلابي:</p>
-                                    <p>{referralToPrint.outcome}</p>
-                                </div>
-                                </>
-                            )}
-                        </div>
-                        <div className="mt-12 flex justify-between px-10">
-                            <div className="text-center"><p className="font-bold mb-8">المحول (الوكيل/المعلم)</p><p>.............................</p></div>
-                            <div className="text-center"><p className="font-bold mb-8">الموجه الطلابي</p><p>.............................</p></div>
-                            <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {printMode === 'positive_daily_report' && (
-                <div>
-                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="السلوك والمواظبة" />
-                    <div className="text-center mb-6">
-                        <h1 className="official-title">تقرير التميز السلوكي اليومي</h1>
-                        <p className="text-lg">التاريخ: {reportDate}</p>
-                    </div>
-                    <table className="w-full text-right border-collapse border border-black text-sm mt-4">
-                        <thead>
-                            <tr className="bg-gray-100">
-                                <th className="border border-black p-2 w-10">م</th>
-                                <th className="border border-black p-2">اسم الطالب</th>
-                                <th className="border border-black p-2">الصف</th>
-                                <th className="border border-black p-2">نوع التميز (السلوك الإيجابي)</th>
-                                <th className="border border-black p-2 w-20 text-center">النقاط</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredPositiveObservations.length > 0 ? filteredPositiveObservations.map((obs, idx) => (
-                                <tr key={idx}>
-                                    <td className="border border-black p-2 text-center">{idx + 1}</td>
-                                    <td className="border border-black p-2 font-bold">{obs.studentName}</td>
-                                    <td className="border border-black p-2">{obs.grade} - {obs.className}</td>
-                                    <td className="border border-black p-2">{obs.content.replace('تعزيز سلوكي: ', '').split('(')[0]}</td>
-                                    <td className="border border-black p-2 text-center">5</td>
-                                </tr>
-                            )) : <tr><td colSpan={5} className="border p-4 text-center">لا يوجد طلاب مسجلين اليوم</td></tr>}
-                        </tbody>
-                    </table>
-                    <div className="mt-16 flex justify-between px-10">
-                        <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
-                        <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
-                    </div>
-                </div>
-            )}
-
-            {printMode === 'absence_referral' && studentToPrint && (
-                <div>
-                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="وكالة شؤون الطلاب - شؤون الغياب" />
-                    <div className="mt-8 px-4">
-                        <h1 className="official-title">إحالة طالب للموجه الطلابي (غياب)</h1>
-                        <div className="text-right space-y-6 text-lg mt-6">
-                            <p>المكرم الموجه الطلابي.. وفقه الله</p>
-                            <p>السلام عليكم ورحمة الله وبركاته،،،</p>
-                            <p>نحيل إليكم الطالب: <strong>{studentToPrint.name}</strong> بالصف: <strong>{studentToPrint.grade} / {studentToPrint.className}</strong></p>
-                            <p>وذلك بسبب تكرار الغياب (بدون عذر) في الأيام التالية:</p>
-                            <div className="flex flex-wrap gap-2 my-4">
-                                {absenceDatesToPrint.map(d => <span key={d} className="border border-black px-3 py-1 bg-gray-50">{d}</span>)}
-                            </div>
-                            <p>نأمل دراسة حالة الطالب ومتابعة غيابه واتخاذ اللازم وفق قواعد السلوك والمواظبة.</p>
-                        </div>
-                        <div className="mt-16 flex justify-between px-8">
-                            <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
-                            <div className="text-center"><p className="font-bold mb-8">الاستلام (الموجه)</p><p>.............................</p></div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {printMode === 'absence_notice' && studentToPrint && (
-                <div>
-                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="وكالة شؤون الطلاب" />
-                    <div className="mt-8 px-4">
-                        <h1 className="official-title">إشعار غياب (أول/ثاني)</h1>
-                        <div className="text-right space-y-6 text-lg mt-6">
-                            <p>المكرم ولي أمر الطالب: <strong>{studentToPrint.name}</strong> .. المحترم</p>
-                            <p>السلام عليكم ورحمة الله وبركاته،،،</p>
-                            <p>نفيدكم بأن ابنكم تغيب عن المدرسة في الأيام التالية بدون عذر مقبول:</p>
-                            <div className="flex flex-wrap gap-2 my-4 font-mono font-bold">
-                                {absenceDatesToPrint.map(d => <span key={d} className="border-b-2 border-black px-2">{d}</span>)}
-                            </div>
-                            <p>نأمل منكم حث الابن على الانضباط وإحضار ما يبرر الغياب، تفادياً للحسم من درجات المواظبة.</p>
-                        </div>
-                        <div className="mt-16 flex justify-between px-8">
-                            <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
-                            <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
-                        </div>
-                    </div>
-                </div>
             )}
         </div>
       </div>
@@ -647,116 +537,6 @@ const StaffDeputy: React.FC = () => {
                 </div>
             </div>
         )}
-        
-        {/* POSITIVE BEHAVIOR VIEW */}
-        {activeView === 'positive' && (
-            <div className="space-y-4 animate-fade-in">
-                <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
-                    <h2 className="text-lg font-bold text-slate-800">سجل التميز والسلوك الإيجابي</h2>
-                    <div className="flex gap-2">
-                        <div className="flex items-center bg-slate-50 rounded-lg border px-2">
-                            <input type="date" value={reportDate} onChange={e=>setReportDate(e.target.value)} className="bg-transparent text-sm font-bold outline-none"/>
-                            <button onClick={handlePrintPositiveDailyReport} className="p-1 hover:bg-white rounded"><Printer size={16}/></button>
-                        </div>
-                        <button onClick={() => setShowPositiveModal(true)} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"><Plus size={18}/> رصد تميز</button>
-                    </div>
-                </div>
-                
-                {filteredPositiveObservations.length === 0 ? <p className="text-center py-10 text-slate-400">لا يوجد سجلات لهذا اليوم.</p> : (
-                    <div className="grid gap-3">
-                        {filteredPositiveObservations.map(obs => (
-                            <div key={obs.id} className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-emerald-50 p-2 rounded-xl text-emerald-600"><Star size={20} fill="currentColor"/></div>
-                                    <div>
-                                        <p className="font-bold text-slate-800">{obs.studentName}</p>
-                                        <p className="text-xs text-slate-500">{obs.content}</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => handleEditPositive(obs)} className="p-2 text-blue-400 hover:bg-blue-50 rounded-lg"><Edit size={16}/></button>
-                                    <button onClick={() => handleDeletePositive(obs.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        )}
-
-        {/* POSITIVE MODAL */}
-        {showPositiveModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-fade-in-up">
-                    <h2 className="text-xl font-bold text-slate-800 mb-4">{isEditingPositive ? 'تعديل التميز' : 'رصد سلوك إيجابي'}</h2>
-                    <form onSubmit={handlePositiveSubmit} className="space-y-4">
-                        {!isEditingPositive && (
-                            <div className="grid grid-cols-2 gap-4">
-                                <select value={formGrade} onChange={e => {setFormGrade(e.target.value); setFormClass('');}} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الصف</option>{GRADES.map(g=><option key={g} value={g}>{g}</option>)}</select>
-                                <select value={formClass} disabled={!formGrade} onChange={e => setFormClass(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الفصل</option>{availableClasses.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                            </div>
-                        )}
-                        {!isEditingPositive && (
-                            <select required value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الطالب</option>{availableStudents.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
-                        )}
-                        <input required value={positiveReason} onChange={e => setPositiveReason(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="سبب التميز (مثلاً: مشاركة فاعلة، نظافة)..."/>
-                        <div className="flex items-center gap-2">
-                            <label className="text-sm font-bold">النقاط:</label>
-                            <input type="number" min="1" value={positivePoints} onChange={e => setPositivePoints(Number(e.target.value))} className="w-20 p-2 border rounded-lg text-center font-bold"/>
-                        </div>
-                        <div className="flex gap-2 mt-4">
-                            <button type="button" onClick={resetForm} className="flex-1 bg-slate-100 py-2 rounded-lg">إلغاء</button>
-                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-bold">حفظ</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        )}
-
-        {/* REFERRALS VIEW */}
-        {activeView === 'referrals' && (
-            <div className="space-y-4 animate-fade-in">
-                <h2 className="text-lg font-bold text-slate-800">متابعة الإحالات الصادرة والواردة</h2>
-                {referrals.length === 0 ? <p className="text-center py-10 text-slate-400">لا يوجد إحالات.</p> : (
-                    <div className="space-y-4">
-                        {referrals.map(ref => (
-                            <div key={ref.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                                <div className="flex justify-between mb-2">
-                                    <h3 className="font-bold text-slate-900">{ref.studentName}</h3>
-                                    <span className={`text-xs px-2 py-1 rounded font-bold ${ref.status==='resolved'?'bg-emerald-100 text-emerald-700':ref.status==='returned_to_deputy'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{ref.status === 'resolved' ? 'مغلق' : ref.status === 'returned_to_deputy' ? 'بانتظار القرار' : 'قيد المعالجة'}</span>
-                                </div>
-                                <p className="text-sm text-slate-600 mb-2">{ref.reason}</p>
-                                {ref.outcome && <div className="bg-slate-50 p-2 rounded text-xs text-slate-700 mb-2 border border-slate-100"><strong>رد الموجه:</strong> {ref.outcome}</div>}
-                                
-                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-50">
-                                    <button onClick={()=>handlePrintReferral(ref)} className="text-xs bg-slate-100 px-3 py-1.5 rounded flex items-center gap-1"><Printer size={12}/> طباعة</button>
-                                    {ref.status === 'returned_to_deputy' && (
-                                        <button onClick={()=>handleOpenCloseModal(ref)} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded font-bold hover:bg-emerald-700 shadow-sm">اتخاذ القرار وإغلاق</button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        )}
-
-        {/* CLOSE REFERRAL MODAL */}
-        {showCloseModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-fade-in-up">
-                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Gavel size={20}/> القرار الإداري النهائي</h2>
-                    <p className="text-sm text-slate-500 mb-2">رد الموجه: {referralToClose?.outcome}</p>
-                    <textarea value={closeDecision} onChange={e => setCloseDecision(e.target.value)} className="w-full p-4 border border-slate-300 rounded-xl min-h-[120px] mb-3" placeholder="نص القرار الإداري..."></textarea>
-                    <button onClick={handleImproveDecision} disabled={isImprovingDecision} className="text-xs text-purple-600 flex items-center gap-1 mb-4 font-bold"><Wand2 size={12}/> {isImprovingDecision ? 'جاري الصياغة...' : 'صياغة قانونية (AI)'}</button>
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowCloseModal(false)} className="flex-1 bg-slate-100 py-2 rounded-lg">إلغاء</button>
-                        <button onClick={handleFinalizeReferral} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-bold">اعتماد وإغلاق</button>
-                    </div>
-                </div>
-            </div>
-        )}
-
       </div>
     </>
   );

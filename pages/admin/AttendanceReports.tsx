@@ -18,7 +18,7 @@ const AttendanceReports: React.FC = () => {
   const [analyzing, setAnalyzing] = useState(false);
 
   // School Info
-  const SCHOOL_NAME = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
+  const SCHOOL_NAME = localStorage.getItem('school_name') || "مدرسة عماد الدين زنكي المتوسطة";
   const SCHOOL_LOGO = "https://www.raed.net/img?id=1471924";
 
   useEffect(() => {
@@ -59,7 +59,7 @@ const AttendanceReports: React.FC = () => {
             - تأخر: ${reportData.totalLate}
             - عدد الأعذار المقدمة: ${dateRequests.length}
             
-            هل هذه النسب مقبولة؟ وما هي التوصيات لتحسين الانضباط غداً؟
+            هل هذه النسب مقبولة؟ وما التوصيات لتحسين الانضباط غداً؟
             أجب باختصار في نقاط.
           `;
           const result = await generateSmartContent(prompt);

@@ -36,7 +36,7 @@ const Dashboard: React.FC = () => {
   const [dataLoading, setDataLoading] = useState(true);
   
   // School Identity
-  const [schoolName, setSchoolName] = useState(localStorage.getItem('school_name') || 'متوسطة عماد الدين زنكي');
+  const [schoolName, setSchoolName] = useState(localStorage.getItem('school_name') || 'مدرسة عماد الدين زنكي المتوسطة');
   const [schoolLogo, setSchoolLogo] = useState(localStorage.getItem('school_logo') || 'https://www.raed.net/img?id=1471924');
   
   // Alerts & AI

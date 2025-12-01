@@ -12,7 +12,7 @@ const Home: React.FC = () => {
   const [regularNews, setRegularNews] = useState<SchoolNews[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const SCHOOL_NAME = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
+  const SCHOOL_NAME = localStorage.getItem('school_name') || "مدرسة عماد الدين زنكي المتوسطة";
   const SCHOOL_LOGO = localStorage.getItem('school_logo') || "https://www.raed.net/img?id=1471924";
 
   useEffect(() => {

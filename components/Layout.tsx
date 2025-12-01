@@ -24,7 +24,7 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
   const isActive = (path: string) => location.pathname === path;
 
   const SCHOOL_LOGO = localStorage.getItem('school_logo') || "https://www.raed.net/img?id=1471924";
-  const SCHOOL_NAME = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
+  const SCHOOL_NAME = localStorage.getItem('school_name') || "مدرسة عماد الدين زنكي المتوسطة";
 
   // Close mobile menu when route changes
   React.useEffect(() => {

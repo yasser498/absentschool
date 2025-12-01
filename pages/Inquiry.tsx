@@ -5,14 +5,14 @@ import {
   Search, User, School, Copy, Check, CalendarDays, AlertCircle, Loader2, 
   FileText, ShieldAlert, Star, MessageSquare, Send, CheckCircle, Clock, Plus, Users, Bell, 
   LogOut, ChevronRight, ArrowLeft, Activity, ChevronLeft, Archive, AlertTriangle, 
-  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer, LogOut as ExitIcon, Calendar
+  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer, LogOut as ExitIcon, Calendar, Medal, Trophy, Phone, ArrowRight, Info
 } from 'lucide-react';
 import { 
   getStudentByCivilId, getRequestsByStudentId, getStudentAttendanceHistory, 
   getBehaviorRecords, getStudentObservations, acknowledgeBehavior, 
   acknowledgeObservation, getParentChildren, linkParentToStudent, 
   getNotifications, markNotificationRead, getStudentPoints, getSchoolNews, generateSmartStudentReport,
-  getAvailableSlots, bookAppointment, getMyAppointments, getMyExitPermissions
+  getAvailableSlots, bookAppointment, getMyAppointments, getMyExitPermissions, getStudentsByPhone
 } from '../services/storage';
 import { 
   Student, ExcuseRequest, RequestStatus, AttendanceStatus, BehaviorRecord, 
@@ -35,26 +35,31 @@ const Inquiry: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDigitalId, setShowDigitalId] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
-  const [selectedNews, setSelectedNews] = useState<SchoolNews | null>(null); // New State for News Modal
+  const [selectedNews, setSelectedNews] = useState<SchoolNews | null>(null);
   
   // Tabs
-  const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'attendance' | 'archive' | 'behavior' | 'observations' | 'visits' | 'exits'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'report' | 'calendar' | 'archive' | 'behavior' | 'positive_behavior' | 'observations' | 'visits' | 'exits'>('overview');
   
   // Data State
   const [history, setHistory] = useState<ExcuseRequest[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<{ date: string, status: AttendanceStatus }[]>([]);
   const [behaviorHistory, setBehaviorHistory] = useState<BehaviorRecord[]>([]);
+  const [positiveObservations, setPositiveObservations] = useState<StudentObservation[]>([]);
   const [observations, setObservations] = useState<StudentObservation[]>([]);
   const [points, setPoints] = useState<{total: number, history: StudentPoint[]}>({ total: 0, history: [] });
   const [exitPermissions, setExitPermissions] = useState<ExitPermission[]>([]);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [newChildId, setNewChildId] = useState('');
+  const [newChildInput, setNewChildInput] = useState('');
   const [isAddingChild, setIsAddingChild] = useState(false);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [smartReport, setSmartReport] = useState<string | null>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
   
+  // Printing State
+  const [printMode, setPrintMode] = useState<'none' | 'certificate'>('none');
+  const [certificateData, setCertificateData] = useState<{studentName: string, reason: string, date: string, points?: number} | null>(null);
+
   // Reply State
   const [replyMode, setReplyMode] = useState<{ id: string, type: 'behavior' | 'observation' } | null>(null);
   const [replyContent, setReplyContent] = useState('');
@@ -69,6 +74,9 @@ const Inquiry: React.FC = () => {
   const [parentNameForVisit, setParentNameForVisit] = useState('');
   const [isBooking, setIsBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState<Appointment | null>(null);
+
+  const SCHOOL_NAME = localStorage.getItem('school_name') || "متوسطة عماد الدين زنكي";
+  const SCHOOL_LOGO = localStorage.getItem('school_logo') || "https://www.raed.net/img?id=1471924";
 
   // Authentication & Load Logic
   const handleLogin = async (e: React.FormEvent) => {
@@ -109,13 +117,51 @@ const Inquiry: React.FC = () => {
   }, [isAuthenticated]);
 
   // Helpers
-  const handleAddChild = async (e: React.FormEvent) => { e.preventDefault(); if (!newChildId) return; setLoading(true); try { const student = await getStudentByCivilId(newChildId); if (!student) { alert("لم يتم العثور على طالب بهذا الرقم."); } else { await linkParentToStudent(parentCivilId, student.studentId); await loadParentDashboard(); setNewChildId(''); setIsAddingChild(false); alert("تم الإضافة!"); } } catch (e) { alert("حدث خطأ."); } finally { setLoading(false); } };
+  const handleAddChild = async (e: React.FormEvent) => { 
+      e.preventDefault(); 
+      if (!newChildInput) return; 
+      setLoading(true); 
+      
+      try { 
+          const isPhone = newChildInput.startsWith('05') || newChildInput.startsWith('966');
+          
+          if (isPhone) {
+              const students = await getStudentsByPhone(newChildInput);
+              if (students.length === 0) {
+                  alert("لم يتم العثور على طلاب مسجلين برقم الجوال هذا.");
+              } else {
+                  for (const s of students) {
+                      await linkParentToStudent(parentCivilId, s.studentId);
+                  }
+                  await loadParentDashboard();
+                  setNewChildInput(''); 
+                  setIsAddingChild(false); 
+                  alert(`تم إضافة ${students.length} طالب/طلاب بنجاح!`);
+              }
+          } else {
+              const student = await getStudentByCivilId(newChildInput); 
+              if (!student) { 
+                  alert("لم يتم العثور على طالب بهذا الرقم."); 
+              } else { 
+                  await linkParentToStudent(parentCivilId, student.studentId); 
+                  await loadParentDashboard(); 
+                  setNewChildInput(''); 
+                  setIsAddingChild(false); 
+                  alert("تم الإضافة!"); 
+              } 
+          }
+      } catch (e) { 
+          alert("حدث خطأ."); 
+      } finally { 
+          setLoading(false); 
+      } 
+  };
   
   const handleSelectStudent = async (student: Student) => {
       setSelectedStudent(student);
       setLoading(true);
       try {
-          const [reqs, att, beh, obs, pts, slots, apps, exits] = await Promise.all([
+          const [reqs, att, beh, allObs, pts, slots, apps, exits] = await Promise.all([
               getRequestsByStudentId(student.studentId),
               getStudentAttendanceHistory(student.studentId, student.grade, student.className),
               getBehaviorRecords(student.studentId),
@@ -125,22 +171,33 @@ const Inquiry: React.FC = () => {
               getMyAppointments(parentCivilId),
               getMyExitPermissions([student.studentId])
           ]);
+          
           setHistory(reqs);
           setAttendanceHistory(att);
           setBehaviorHistory(beh);
-          setObservations(obs);
+          setPositiveObservations(allObs.filter(o => o.type === 'positive'));
+          setObservations(allObs.filter(o => o.type !== 'positive'));
           setPoints(pts);
           setAvailableSlots(slots);
           setMyAppointments(apps.filter(a => a.studentId === student.studentId));
           setExitPermissions(exits);
           setActiveTab('overview');
+          setSmartReport(null); // Reset report
       } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  const unexcusedAbsences = useMemo(() => { if (!attendanceHistory.length) return []; return attendanceHistory.filter(record => { if (record.status !== AttendanceStatus.ABSENT) return false; const hasRequest = history.some(req => req.date === record.date); return !hasRequest; }); }, [attendanceHistory, history]);
+  const unexcusedAbsences = useMemo(() => { 
+      if (!attendanceHistory.length) return []; 
+      return attendanceHistory.filter(record => { 
+          if (record.status !== AttendanceStatus.ABSENT) return false; 
+          // Check if there is an approved excuse for this date
+          const hasRequest = history.some(req => req.date === record.date && req.status !== RequestStatus.REJECTED); 
+          return !hasRequest; 
+      }); 
+  }, [attendanceHistory, history]);
+
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); };
   
-  // Reply Logic
   const handleSubmitReply = async () => {
       if (!replyMode || !replyContent.trim()) return;
       setSubmittingReply(true);
@@ -152,457 +209,769 @@ const Inquiry: React.FC = () => {
       } catch(e) { alert("حدث خطأ"); } finally { setSubmittingReply(false); }
   };
 
-  const handleGenerateSmartReport = async () => { if (!selectedStudent) return; setGeneratingReport(true); try { const report = await generateSmartStudentReport(selectedStudent.name, attendanceHistory, behaviorHistory, points.total); setSmartReport(report); } catch (e) { alert("فشل التوليد"); } finally { setGeneratingReport(false); } };
+  const handleGenerateSmartReport = async () => { 
+      if (!selectedStudent) return; 
+      setGeneratingReport(true); 
+      try { 
+          const report = await generateSmartStudentReport(selectedStudent.name, attendanceHistory, behaviorHistory, points.total); 
+          setSmartReport(report); 
+      } catch (e) { 
+          alert("فشل التوليد، حاول مرة أخرى لاحقاً"); 
+      } finally { 
+          setGeneratingReport(false); 
+      } 
+  };
 
-  // BOOKING LOGIC
+  const handlePrintCertificate = (record: StudentObservation) => {
+      if (!selectedStudent) return;
+      let reason = record.content.replace('تعزيز سلوكي: ', '');
+      let pts = 5;
+      const pointsMatch = reason.match(/\((\d+) درجات\)/);
+      if (pointsMatch) { pts = parseInt(pointsMatch[1]); reason = reason.replace(pointsMatch[0], '').trim(); }
+      setCertificateData({ studentName: selectedStudent.name, reason: reason, date: record.date, points: pts });
+      setPrintMode('certificate');
+      setTimeout(() => { window.print(); setPrintMode('none'); }, 300);
+  };
+
   const handleBookSlot = async (slot: AppointmentSlot) => {
       if (!visitReason || !parentNameForVisit) { alert("يرجى إدخال اسم ولي الأمر وسبب الزيارة"); return; }
       if (!selectedStudent) return;
       setIsBooking(true);
       try {
-          const appt = await bookAppointment({
-              slotId: slot.id,
-              studentId: selectedStudent.studentId,
-              studentName: selectedStudent.name,
-              parentName: parentNameForVisit,
-              parentCivilId: parentCivilId,
-              visitReason: visitReason
-          });
-          setBookingSuccess(appt);
-          setShowBookingModal(true);
-          setVisitReason('');
+          const appt = await bookAppointment({ slotId: slot.id, studentId: selectedStudent.studentId, studentName: selectedStudent.name, parentName: parentNameForVisit, parentCivilId: parentCivilId, visitReason: visitReason });
+          setBookingSuccess(appt); setShowBookingModal(true); setVisitReason('');
           const [newSlots, newApps] = await Promise.all([getAvailableSlots(), getMyAppointments(parentCivilId)]);
-          setAvailableSlots(newSlots);
-          setMyAppointments(newApps.filter(a => a.studentId === selectedStudent.studentId));
+          setAvailableSlots(newSlots); setMyAppointments(newApps.filter(a => a.studentId === selectedStudent.studentId));
       } catch (e: any) { alert(e.message || "حدث خطأ"); } finally { setIsBooking(false); }
   };
 
-  // Calendar Logic
   const getDaysInMonth = (date: Date) => { const year = date.getFullYear(); const month = date.getMonth(); const daysInMonth = new Date(year, month + 1, 0).getDate(); const firstDay = new Date(year, month, 1).getDay(); const days = []; for (let i = 0; i < firstDay; i++) days.push(null); for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i)); return days; };
-  const getAttendanceStatusForDate = (date: Date) => { const dateStr = date.toISOString().split('T')[0]; const record = attendanceHistory.find(r => r.date === dateStr); return record ? record.status : null; };
+  
+  // Enhanced Calendar Logic
+  const getDateStatusInfo = (date: Date) => { 
+      const dateStr = date.toISOString().split('T')[0]; 
+      const attendance = attendanceHistory.find(r => r.date === dateStr);
+      const excuse = history.find(req => req.date === dateStr && req.status !== RequestStatus.REJECTED);
+      const exit = exitPermissions.find(e => e.createdAt.startsWith(dateStr));
+
+      // Hierarchy: Absent (Unexcused) > Absent (Excused) > Exit Permission > Late > Present
+      if (attendance?.status === AttendanceStatus.ABSENT) {
+          if (excuse) return { type: 'excused', color: 'bg-blue-500 text-white', label: 'غياب بعذر' };
+          return { type: 'absent', color: 'bg-red-500 text-white shadow-md shadow-red-200', label: 'غياب بدون عذر' };
+      }
+      if (attendance?.status === AttendanceStatus.LATE) {
+          return { type: 'late', color: 'bg-amber-400 text-white', label: 'تأخر' };
+      }
+      if (exit) {
+          return { type: 'exit', color: 'bg-purple-500 text-white', label: 'استئذان' };
+      }
+      if (attendance?.status === AttendanceStatus.PRESENT) {
+          return { type: 'present', color: 'bg-emerald-500 text-white', label: 'حضور' };
+      }
+      return null;
+  };
+
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
+  // Render Login Screen
   if (!isAuthenticated) {
-      return (<div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans"><div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 relative overflow-hidden"><div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-purple-600"></div><div className="text-center mb-8"><div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-100"><Users size={32} className="text-blue-600"/></div><h1 className="text-2xl font-bold text-slate-800">بوابة ولي الأمر</h1><p className="text-slate-500 text-sm mt-2">سجل دخولك برقم الهوية لمتابعة أبنائك</p></div><form onSubmit={handleLogin} className="space-y-6"><div><label className="block text-xs font-bold text-slate-500 mb-2 uppercase">رقم الهوية / السجل المدني</label><input type="text" required maxLength={10} value={parentCivilId} onChange={e => setParentCivilId(e.target.value.replace(/[^0-9]/g, ''))} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-xl font-bold tracking-widest focus:ring-2 focus:ring-blue-600 outline-none" placeholder="1XXXXXXXXX"/></div><button disabled={authLoading} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2">{authLoading ? <Loader2 className="animate-spin"/> : 'تسجيل الدخول'}</button></form></div></div>);
+      return (
+        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+            {/* Background Effects */}
+            <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
+            <div className="absolute -top-20 -right-20 w-72 h-72 bg-blue-600 rounded-full blur-[100px] opacity-20"></div>
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-600 rounded-full blur-[80px] opacity-20"></div>
+
+            <div className="w-full max-w-md relative z-10">
+                <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl p-8 shadow-2xl text-center">
+                    <div className="w-24 h-24 bg-white rounded-full p-2 mx-auto mb-6 shadow-lg flex items-center justify-center">
+                        <img src={SCHOOL_LOGO} alt="Logo" className="w-full h-full object-contain" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-white mb-2">بوابة ولي الأمر</h1>
+                    <p className="text-slate-300 text-sm mb-8">سجل دخولك برقم الهوية لمتابعة أبنائك</p>
+
+                    <form onSubmit={handleLogin} className="space-y-6">
+                        <div className="space-y-2 text-right">
+                            <label className="text-xs font-bold text-slate-300 uppercase mr-1">رقم الهوية / السجل المدني</label>
+                            <input 
+                                type="tel" 
+                                required 
+                                maxLength={10} 
+                                value={parentCivilId} 
+                                onChange={e => setParentCivilId(e.target.value.replace(/[^0-9]/g, ''))} 
+                                className="w-full p-4 bg-slate-800/50 border border-slate-600 rounded-2xl text-center text-xl font-bold tracking-widest text-white placeholder:text-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
+                                placeholder="1XXXXXXXXX"
+                            />
+                        </div>
+                        <button 
+                            disabled={authLoading} 
+                            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-2xl font-bold hover:shadow-lg hover:shadow-blue-600/30 transition-all flex items-center justify-center gap-2 active:scale-95"
+                        >
+                            {authLoading ? <Loader2 className="animate-spin"/> : 'تسجيل الدخول'}
+                        </button>
+                    </form>
+                </div>
+                <p className="text-center text-slate-500 text-xs mt-6">© {new Date().getFullYear()} {SCHOOL_NAME}</p>
+            </div>
+        </div>
+      );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 font-sans relative">
-        <div className="bg-white sticky top-0 z-30 border-b border-slate-100 shadow-sm"><div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between"><div className="flex items-center gap-2 font-bold text-slate-800"><Users className="text-blue-600"/> بوابة ولي الأمر</div><div className="flex items-center gap-3"><button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 rounded-full hover:bg-slate-100"><Bell size={24} className="text-slate-600"/>{unreadCount > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}</button><button onClick={handleLogout} className="p-2 rounded-full hover:bg-red-50 text-slate-400 hover:text-red-500"><LogOut size={20}/></button></div></div></div>
-        {showNotifications && (<div className="max-w-5xl mx-auto px-4 relative z-20"><div className="absolute top-2 left-4 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden"><div className="p-3 border-b border-slate-50 font-bold text-sm bg-slate-50">الإشعارات</div><div className="max-h-64 overflow-y-auto">{notifications.length === 0 ? <p className="p-4 text-center text-xs text-slate-400">لا توجد إشعارات</p> : notifications.map(n => (<div key={n.id} className={`p-3 border-b border-slate-50 text-sm ${!n.isRead ? 'bg-blue-50/50' : ''}`} onClick={() => markNotificationRead(n.id)}><p className="font-bold text-slate-800">{n.title}</p><p className="text-xs text-slate-500 mt-1">{n.message}</p></div>))}</div></div></div>)}
-
-        <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-            
-            {/* NEWS SECTION */}
-            {news.length > 0 && !selectedStudent && (
-                <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden p-4 relative animate-fade-in">
-                    <div className="flex items-center gap-2 mb-3">
-                        <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider animate-pulse">هام</span>
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2"><Newspaper size={16} className="text-blue-500"/> أخبار المدرسة</h3>
-                    </div>
-                    <div className="space-y-3">
-                        {news.slice(0, 3).map(n => (
-                            <div 
-                                key={n.id} 
-                                onClick={() => setSelectedNews(n)}
-                                className={`p-3 rounded-xl border-l-4 cursor-pointer hover:bg-slate-50 transition-all ${n.isUrgent ? 'bg-red-50 border-red-500' : 'bg-slate-50 border-blue-500'}`}
-                            >
-                                <h4 className="font-bold text-sm text-slate-900">{n.title}</h4>
-                                <p className="text-xs text-slate-600 mt-1 line-clamp-2">{n.content}</p>
-                                <div className="mt-2 text-[10px] text-slate-400 flex justify-between items-center">
-                                    <span>{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
-                                    <span className="text-blue-600 font-bold underline">اقرأ التفاصيل</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Children List */}
-            {!selectedStudent ? (
-                <div className="animate-fade-in space-y-6">
-                    <div className="flex justify-between items-center"><h2 className="text-xl font-bold text-slate-800">أبنائي</h2><button onClick={() => setIsAddingChild(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-blue-700 shadow-md shadow-blue-200"><Plus size={16}/> إضافة ابن</button></div>
-                    {isAddingChild && (<div className="bg-white p-4 rounded-2xl shadow-sm border border-blue-100 animate-fade-in-up"><form onSubmit={handleAddChild} className="flex gap-2"><input autoFocus placeholder="رقم هوية الطالب..." value={newChildId} onChange={e => setNewChildId(e.target.value)} className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-100 font-bold text-slate-800"/><button disabled={loading} className="bg-blue-600 text-white px-6 rounded-xl font-bold">{loading ? <Loader2 className="animate-spin"/> : 'إضافة'}</button><button type="button" onClick={() => setIsAddingChild(false)} className="bg-slate-100 text-slate-500 px-4 rounded-xl font-bold">إلغاء</button></form></div>)}
-                    {myChildren.length === 0 ? (<div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-300"><div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4"><Users className="text-slate-300"/></div><p className="font-bold text-slate-500">لم يتم ربط أي طلاب بحسابك بعد.</p><p className="text-sm text-slate-400 mt-1">اضغط "إضافة ابن" وأدخل رقم الهوية.</p></div>) : (<div className="grid grid-cols-1 md:grid-cols-2 gap-4">{myChildren.map(child => (<div key={child.id} onClick={() => handleSelectStudent(child)} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer group"><div className="flex items-center gap-4"><div className="w-14 h-14 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-xl font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">{child.name.charAt(0)}</div><div><h3 className="font-bold text-lg text-slate-900 group-hover:text-blue-800">{child.name}</h3><p className="text-sm text-slate-500">{child.grade} - {child.className}</p></div><ChevronRight className="mr-auto text-slate-300 group-hover:text-blue-500"/></div></div>))}</div>)}
-                </div>
-            ) : (
-                <div className="animate-fade-in space-y-6">
-                    <button onClick={() => setSelectedStudent(null)} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 font-bold mb-4"><ArrowLeft size={18}/> العودة للقائمة</button>
+    <div className="min-h-screen bg-slate-50 pb-24 font-sans relative">
+        
+        {/* CERTIFICATE PRINT TEMPLATE */}
+        <div id="print-area" className="hidden" dir="rtl">
+            {printMode === 'certificate' && certificateData && (
+                <div className="certificate-border text-center flex flex-col justify-between p-10 h-full bg-white relative overflow-hidden">
+                    <img src="https://www.raed.net/img?id=1474173" className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-5 w-2/3 pointer-events-none" />
                     
-                    {/* Header */}
-                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-full bg-gradient-to-l from-blue-50 to-transparent"></div>
-                        <div className="relative z-10 flex flex-col md:flex-row gap-6 items-center md:items-start text-center md:text-right">
-                            <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center text-3xl font-bold shadow-inner">{selectedStudent.name.charAt(0)}</div>
-                            <div className="flex-1">
-                                <h2 className="text-2xl font-bold text-slate-900">{selectedStudent.name}</h2>
-                                <p className="text-slate-500">{selectedStudent.grade} - {selectedStudent.className}</p>
-                                <div className="mt-4 flex flex-wrap justify-center md:justify-start gap-3">
-                                    <div className="bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 border border-amber-100"><Star size={16}/> {points.total} نقطة تميز</div>
-                                    <button onClick={() => setShowDigitalId(true)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 border border-purple-100 hover:bg-purple-100 transition-colors"><CreditCard size={16}/> البطاقة الرقمية</button>
-                                </div>
+                    <div className="flex justify-between items-start mb-8 relative z-10">
+                        <div className="text-right text-xs font-bold">
+                            <p>المملكة العربية السعودية</p>
+                            <p>وزارة التعليم</p>
+                            <p>{SCHOOL_NAME}</p>
+                        </div>
+                        <img src="https://www.raed.net/img?id=1474173" className="h-24 w-auto object-contain" alt="Logo" />
+                        <div className="text-left text-xs font-bold">
+                            <p>Kingdom of Saudi Arabia</p>
+                            <p>Ministry of Education</p>
+                        </div>
+                    </div>
+
+                    <div className="relative z-10 flex-1 flex flex-col justify-center">
+                        <h1 className="text-4xl font-extrabold text-slate-800 mb-2">شهادة شكر وتقدير</h1>
+                        <div className="w-1/3 h-1 bg-amber-400 mx-auto mb-8 rounded-full"></div>
+                        
+                        <p className="text-lg mb-6 leading-loose">
+                            تسر إدارة المدرسة ووكالة شؤون الطلاب أن تتقدم بخالص الشكر والتقدير للطالب:
+                        </p>
+                        <h2 className="text-3xl font-bold text-blue-900 mb-8 underline underline-offset-8 decoration-amber-400 decoration-4">
+                            {certificateData.studentName}
+                        </h2>
+                        <p className="text-lg mb-4">
+                            وذلك لتميزه في: <span className="font-bold">{certificateData.reason}</span>
+                        </p>
+                        {certificateData.points && (
+                            <div className="inline-block bg-slate-100 border border-slate-300 px-6 py-2 rounded-xl text-lg font-bold my-4">
+                                تم منحه {certificateData.points} نقاط تميز
                             </div>
-                            <button onClick={() => navigate(`/submit?studentId=${selectedStudent.studentId}`)} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all flex items-center gap-2"><FileText size={18}/> تقديم عذر</button>
-                        </div>
+                        )}
+                        <p className="text-lg mt-6">
+                            متمنين له دوام التوفيق والنجاح.
+                        </p>
                     </div>
 
-                    {/* Tabs */}
-                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                        {[{ id: 'overview', label: 'ملخص', icon: Activity }, { id: 'exits', label: 'إذن خروج', icon: ExitIcon }, { id: 'visits', label: 'حجز موعد', icon: CalendarCheck }, { id: 'report', label: 'التقرير الذكي', icon: Sparkles }, { id: 'attendance', label: 'التقويم', icon: CalendarDays }, { id: 'archive', label: 'أرشيف الأعذار', icon: Archive }, { id: 'behavior', label: 'السلوك', icon: ShieldAlert }, { id: 'observations', label: 'الملاحظات', icon: MessageSquare }].map(tab => (
-                            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap border ${activeTab === tab.id ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}><tab.icon size={16}/> {tab.label}</button>
-                        ))}
-                    </div>
-
-                    {loading ? <div className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600"/></div> : (
-                        <div className="min-h-[300px]">
-                            {/* OVERVIEW */}
-                            {activeTab === 'overview' && (
-                                <div className="space-y-6 animate-fade-in">
-                                    {unexcusedAbsences.length > 0 && (<div className="bg-red-50 border-2 border-red-100 rounded-2xl p-5 shadow-sm"><div className="flex justify-between items-start mb-4"><h3 className="font-bold text-red-800 flex items-center gap-2"><AlertTriangle className="text-red-600"/> غياب لم يتم تقديم عذر له</h3><span className="bg-white text-red-600 px-3 py-1 rounded-lg text-xs font-bold border border-red-100">{unexcusedAbsences.length} أيام</span></div><div className="grid grid-cols-1 md:grid-cols-2 gap-3">{unexcusedAbsences.map((rec, idx) => (<div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-red-100"><span className="font-mono font-bold text-slate-700">{rec.date}</span><button onClick={() => navigate(`/submit?studentId=${selectedStudent.studentId}&date=${rec.date}`)} className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-red-700 transition-colors">تقديم عذر</button></div>))}</div></div>)}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Clock className="text-blue-500"/> الحضور والغياب</h3><div className="flex justify-between text-center"><div><p className="text-2xl font-bold text-red-600">{attendanceHistory.filter(x=>x.status==='ABSENT').length}</p><p className="text-xs text-slate-400">غياب</p></div><div><p className="text-2xl font-bold text-amber-500">{attendanceHistory.filter(x=>x.status==='LATE').length}</p><p className="text-xs text-slate-400">تأخر</p></div><div><p className="text-2xl font-bold text-emerald-600">{attendanceHistory.filter(x=>x.status==='PRESENT').length}</p><p className="text-xs text-slate-400">حضور</p></div></div></div><div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm"><h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><Star className="text-amber-500"/> نقاط التميز</h3>{points.history.length > 0 ? (<div className="space-y-3">{points.history.slice(0,3).map(p => (<div key={p.id} className="flex justify-between text-sm bg-amber-50 p-2 rounded-lg text-amber-800"><span>{p.reason}</span><span className="font-bold">+{p.points}</span></div>))}</div>) : <p className="text-slate-400 text-sm">لا يوجد نقاط مكتسبة بعد.</p>}</div></div>
-                                </div>
-                            )}
-
-                            {/* EXIT PERMISSIONS */}
-                            {activeTab === 'exits' && (
-                                <div className="space-y-6 animate-fade-in">
-                                    <div className="bg-orange-50 border border-orange-200 p-6 rounded-3xl relative overflow-hidden">
-                                        <div className="relative z-10">
-                                            <h3 className="text-lg font-bold text-orange-900 mb-4 flex items-center gap-2"><ExitIcon /> بطاقة الخروج الرقمية</h3>
-                                            
-                                            {/* Show active exit if exists */}
-                                            {(() => {
-                                                const activeExit = exitPermissions.find(p => p.status === 'pending_pickup' && (new Date().getTime() - new Date(p.createdAt).getTime()) < 3600000); // 1 hour valid
-                                                if (activeExit) {
-                                                    return (
-                                                        <div className="bg-white p-6 rounded-2xl shadow-lg border border-orange-100 text-center">
-                                                            <div className="bg-slate-50 inline-block p-4 rounded-xl border border-slate-200 mb-4">
-                                                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=EXIT:${activeExit.id}`} alt="Exit QR" className="w-48 h-48 mix-blend-multiply"/>
-                                                            </div>
-                                                            <p className="text-sm text-slate-500 font-bold mb-2">يرجى إبراز الباركود لرجل الأمن عند البوابة</p>
-                                                            <div className="bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold inline-block animate-pulse">
-                                                                إذن خروج نشط
-                                                            </div>
-                                                            <p className="text-xs text-slate-400 mt-2">صلاحية الرمز: ساعة واحدة</p>
-                                                        </div>
-                                                    );
-                                                }
-                                                return <p className="text-slate-500 text-sm">لا يوجد طلب استئذان نشط حالياً.</p>;
-                                            })()}
-                                        </div>
-                                    </div>
-
-                                    {/* History */}
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                        <h3 className="font-bold text-slate-800 mb-4">سجل الاستئذان السابق</h3>
-                                        {exitPermissions.length === 0 ? <p className="text-slate-400 text-sm">السجل فارغ.</p> : (
-                                            <div className="space-y-3">
-                                                {exitPermissions.map(p => (
-                                                    <div key={p.id} className="flex justify-between items-center p-3 border-b border-slate-50 last:border-0">
-                                                        <div>
-                                                            <p className="font-bold text-slate-800 text-sm">{p.reason || 'بدون سبب'}</p>
-                                                            <div className="text-xs text-slate-500 flex gap-2">
-                                                                <span>{new Date(p.createdAt).toLocaleDateString('ar-SA')}</span>
-                                                                {p.createdByName && <span className="bg-slate-100 px-1 rounded">المصرح: {p.createdByName}</span>}
-                                                            </div>
-                                                        </div>
-                                                        <span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                                                            {p.status === 'completed' ? 'تم الخروج' : 'منتهي/انتظار'}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === 'archive' && (
-                                <div className="space-y-4 animate-fade-in">
-                                    {history.length === 0 ? (
-                                        <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200">
-                                            <FileText size={48} className="mx-auto mb-4 opacity-20 text-slate-400"/>
-                                            <p className="text-slate-500 font-medium">لم يتم تقديم أي أعذار سابقة لهذا الطالب.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="grid gap-4">
-                                            {history.map(req => (
-                                                <div key={req.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row gap-4 items-start md:items-center justify-between group">
-                                                    <div className="flex items-start gap-4">
-                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 text-xl font-bold ${
-                                                            req.status === RequestStatus.APPROVED ? 'bg-emerald-100 text-emerald-600' :
-                                                            req.status === RequestStatus.REJECTED ? 'bg-red-100 text-red-600' :
-                                                            'bg-amber-100 text-amber-600'
-                                                        }`}>
-                                                            {req.status === RequestStatus.APPROVED ? <CheckCircle size={24}/> :
-                                                             req.status === RequestStatus.REJECTED ? <X size={24}/> :
-                                                             <Clock size={24}/>}
-                                                        </div>
-                                                        <div>
-                                                            <div className="flex items-center gap-2 mb-1">
-                                                                <span className="font-mono font-bold text-slate-800 text-lg">{req.date}</span>
-                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                                    req.status === RequestStatus.APPROVED ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                                                                    req.status === RequestStatus.REJECTED ? 'bg-red-50 text-red-700 border border-red-100' :
-                                                                    'bg-amber-50 text-amber-700 border border-amber-100'
-                                                                }`}>
-                                                                    {req.status === RequestStatus.APPROVED ? 'تم القبول' : req.status === RequestStatus.REJECTED ? 'مرفوض' : 'قيد المراجعة'}
-                                                                </span>
-                                                            </div>
-                                                            <p className="text-slate-600 font-medium text-sm">{req.reason} {req.details ? `- ${req.details}` : ''}</p>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {req.attachmentUrl && (
-                                                        <a 
-                                                            href={req.attachmentUrl} 
-                                                            target="_blank" 
-                                                            rel="noopener noreferrer"
-                                                            className="flex items-center gap-2 px-4 py-2 bg-slate-50 text-blue-600 rounded-xl text-xs font-bold hover:bg-blue-50 transition-colors border border-slate-100 w-full md:w-auto justify-center"
-                                                        >
-                                                            <Paperclip size={14}/> عرض المرفق
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {activeTab === 'attendance' && (
-                                <div className="space-y-6 animate-fade-in">
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                                        <div className="flex justify-between items-center mb-6">
-                                            <button onClick={() => setCalendarMonth(new Date(calendarMonth.setMonth(calendarMonth.getMonth() - 1)))} className="p-2 hover:bg-slate-100 rounded-full"><ChevronRight size={20}/></button>
-                                            <h3 className="font-bold text-lg text-slate-800">{calendarMonth.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })}</h3>
-                                            <button onClick={() => setCalendarMonth(new Date(calendarMonth.setMonth(calendarMonth.getMonth() + 1)))} className="p-2 hover:bg-slate-100 rounded-full"><ChevronLeft size={20}/></button>
-                                        </div>
-                                        <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-400 mb-2">
-                                            <div>الأحد</div><div>الإثنين</div><div>الثلاثاء</div><div>الأربعاء</div><div>الخميس</div><div>الجمعة</div><div>السبت</div>
-                                        </div>
-                                        <div className="grid grid-cols-7 gap-2">
-                                            {getDaysInMonth(calendarMonth).map((date, i) => {
-                                                if (!date) return <div key={i}></div>;
-                                                const status = getAttendanceStatusForDate(date);
-                                                const isWeekend = date.getDay() === 5 || date.getDay() === 6;
-                                                const isFuture = date > new Date();
-                                                
-                                                let bgClass = 'bg-slate-50 border-slate-100 text-slate-700';
-                                                if (status === AttendanceStatus.ABSENT) bgClass = 'bg-red-500 text-white border-red-500 shadow-md shadow-red-200';
-                                                else if (status === AttendanceStatus.LATE) bgClass = 'bg-amber-400 text-white border-amber-400 shadow-md shadow-amber-200';
-                                                else if (status === AttendanceStatus.PRESENT) bgClass = 'bg-emerald-500 text-white border-emerald-500';
-                                                else if (isWeekend) bgClass = 'bg-slate-100 text-slate-300 border-transparent';
-                                                
-                                                return (
-                                                    <div key={i} className={`h-12 md:h-16 rounded-xl border flex items-center justify-center text-sm font-bold transition-all ${bgClass} ${!isWeekend && !isFuture && !status ? 'opacity-50' : ''}`}>
-                                                        {date.getDate()}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                        <div className="flex gap-4 justify-center mt-6 text-xs font-bold text-slate-600">
-                                            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-emerald-500"></div>حضور</div>
-                                            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-500"></div>غياب</div>
-                                            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-amber-400"></div>تأخر</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === 'report' && (
-                                <div className="space-y-6 animate-fade-in">
-                                    <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl p-8 text-white relative overflow-hidden shadow-lg">
-                                        <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl -mr-20 -mt-20"></div>
-                                        <div className="relative z-10 text-center">
-                                            <Sparkles className="mx-auto mb-4 text-amber-300" size={48}/>
-                                            <h2 className="text-2xl font-bold mb-2">التقرير التربوي الذكي</h2>
-                                            <p className="text-blue-100 mb-6 max-w-md mx-auto">يقوم نظامنا بتحليل بيانات الحضور والسلوك والملاحظات ليقدم لك تقريراً شاملاً ونصائح تربوية مخصصة لابنك.</p>
-                                            <button 
-                                                onClick={handleGenerateSmartReport} 
-                                                disabled={generatingReport}
-                                                className="bg-white text-blue-700 px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-50 transition-all flex items-center justify-center gap-2 mx-auto disabled:opacity-70 disabled:cursor-not-allowed"
-                                            >
-                                                {generatingReport ? <Loader2 className="animate-spin"/> : <Sparkles size={18}/>}
-                                                {generatingReport ? 'جاري إعداد التقرير...' : 'إصدار التقرير الآن'}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {smartReport && (
-                                        <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm animate-fade-in-up">
-                                            <div className="prose prose-lg text-slate-800 leading-relaxed whitespace-pre-line font-medium text-right">
-                                                {smartReport}
-                                            </div>
-                                            <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end">
-                                                <button onClick={() => window.print()} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold">
-                                                    <Printer size={18}/> طباعة التقرير
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                            
-                            {activeTab === 'visits' && (
-                                <div className="space-y-6 animate-fade-in">
-                                    {myAppointments.filter(a => a.status === 'pending').length > 0 && (
-                                        <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl"><h3 className="font-bold text-amber-800 mb-3 flex items-center gap-2"><Clock size={18}/> حجوزاتك القادمة</h3>{myAppointments.filter(a => a.status === 'pending').map(a => (<div key={a.id} className="bg-white p-3 rounded-xl border border-amber-100 flex justify-between items-center mb-2"><div><p className="font-bold text-slate-800">{a.slot?.date}</p><p className="text-xs text-slate-500">{a.slot?.startTime} - {a.slot?.endTime}</p></div><button onClick={() => { setBookingSuccess(a); setShowBookingModal(true); }} className="text-xs bg-amber-100 text-amber-800 px-3 py-1.5 rounded-lg font-bold">عرض التذكرة</button></div>))}</div>
-                                    )}
-                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"><h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2"><CalendarCheck className="text-blue-600"/> المواعيد المتاحة للحجز</h3>{availableSlots.length === 0 ? (<div className="text-center py-10 text-slate-400"><CalendarDays size={40} className="mx-auto mb-2 opacity-30"/><p>لا توجد مواعيد متاحة حالياً.</p></div>) : (<div className="space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="text-xs font-bold text-slate-500 block mb-1.5">اسم ولي الأمر (الزائر)</label><input value={parentNameForVisit} onChange={e => setParentNameForVisit(e.target.value)} className="w-full p-3 border rounded-xl font-bold text-sm bg-slate-50 focus:ring-2 focus:ring-blue-100 outline-none" placeholder="الاسم الثلاثي..."/></div><div><label className="text-xs font-bold text-slate-500 block mb-1.5">سبب الزيارة</label><input value={visitReason} onChange={e => setVisitReason(e.target.value)} className="w-full p-3 border rounded-xl font-bold text-sm bg-slate-50 focus:ring-2 focus:ring-blue-100 outline-none" placeholder="مثال: مناقشة مستوى الطالب..."/></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-3">{availableSlots.map(slot => (<button key={slot.id} onClick={() => handleBookSlot(slot)} disabled={isBooking || slot.currentBookings >= slot.maxCapacity} className={`border rounded-xl p-4 text-right transition-all relative overflow-hidden group ${slot.currentBookings >= slot.maxCapacity ? 'opacity-50 cursor-not-allowed bg-slate-50' : 'hover:border-blue-400 hover:shadow-md bg-white'}`}>{slot.currentBookings >= slot.maxCapacity && <div className="absolute inset-0 flex items-center justify-center bg-slate-100/80 font-bold text-slate-500 z-10">ممتلئ</div>}<p className="font-bold text-blue-900">{slot.date}</p><p className="text-sm text-slate-600 mt-1 font-mono">{slot.startTime} - {slot.endTime}</p><div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden"><div className="bg-blue-500 h-full rounded-full" style={{width: `${(slot.currentBookings/slot.maxCapacity)*100}%`}}></div></div><p className="text-[10px] text-slate-400 mt-1 text-left">المتبقي: {slot.maxCapacity - slot.currentBookings}</p></button>))}</div></div>)}</div>
-                                </div>
-                            )}
-
-                            {activeTab === 'behavior' && (
-                                <div className="space-y-4 animate-fade-in">
-                                    {behaviorHistory.length === 0 ? <p className="text-center py-10 text-slate-400">سجل سلوكي نظيف وممتاز!</p> : behaviorHistory.map(rec => (
-                                        <div key={rec.id} className="bg-white p-5 rounded-2xl border border-red-100 shadow-sm">
-                                            <div className="flex justify-between mb-2">
-                                                <span className="font-bold text-red-700">{rec.violationName}</span>
-                                                <span className="text-xs text-slate-400">{rec.date}</span>
-                                            </div>
-                                            <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-xl mb-3">{rec.actionTaken}</p>
-                                            {!rec.parentViewed ? (
-                                                <div className="mt-3">
-                                                    {replyMode?.id === rec.id && replyMode.type === 'behavior' ? (
-                                                        <div className="animate-fade-in">
-                                                            <textarea className="w-full p-3 border rounded-xl text-sm mb-2 outline-none focus:ring-2 focus:ring-blue-100" placeholder="اكتب ردك..." value={replyContent} onChange={e => setReplyContent(e.target.value)} autoFocus></textarea>
-                                                            <div className="flex gap-2 justify-end"><button onClick={() => { setReplyMode(null); setReplyContent(''); }} className="bg-slate-100 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">إلغاء</button><button onClick={handleSubmitReply} disabled={submittingReply} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1">{submittingReply ? <Loader2 className="animate-spin" size={14}/> : <Send size={14}/>} إرسال</button></div>
-                                                        </div>
-                                                    ) : (<button onClick={() => { setReplyMode({id: rec.id, type: 'behavior'}); setReplyContent(''); }} className="w-full bg-red-50 text-red-700 py-2 rounded-lg text-sm font-bold border border-red-100 hover:bg-red-100 transition-colors">تأكيد الاطلاع والرد</button>)}
-                                                </div>
-                                            ) : (<div className="mt-3 bg-slate-50 p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2 border border-slate-100"><CheckCircle size={16} className="text-emerald-500"/><div><span className="font-bold text-emerald-700 block">تم الاطلاع</span>{rec.parentFeedback && <span className="text-slate-600 mt-1 block">رد ولي الأمر: {rec.parentFeedback}</span>}</div></div>)}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            
-                            {activeTab === 'observations' && (
-                                <div className="space-y-4 animate-fade-in">
-                                    {observations.length === 0 ? <p className="text-center py-10 text-slate-400">لا توجد ملاحظات.</p> : observations.map(obs => (
-                                        <div key={obs.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-                                            <div className={`absolute top-0 right-0 w-1 h-full ${obs.sentiment === 'positive' ? 'bg-emerald-500' : obs.sentiment === 'negative' ? 'bg-red-500' : 'bg-slate-300'}`}></div>
-                                            <p className="text-sm font-bold text-slate-800 mb-2">{obs.staffName}</p>
-                                            <p className="text-sm text-slate-600 mb-4">{obs.content}</p>
-                                            
-                                            {!obs.parentViewed ? (
-                                                <div className="mt-3 pt-3 border-t border-slate-100">
-                                                    {replyMode?.id === obs.id && replyMode.type === 'observation' ? (
-                                                        <div className="animate-fade-in">
-                                                            <textarea 
-                                                                className="w-full p-3 border rounded-xl text-sm mb-2 outline-none focus:ring-2 focus:ring-blue-100" 
-                                                                placeholder="اكتب ردك أو ملاحظتك هنا..."
-                                                                value={replyContent}
-                                                                onChange={e => setReplyContent(e.target.value)}
-                                                                autoFocus
-                                                            ></textarea>
-                                                            <div className="flex gap-2 justify-end">
-                                                                <button onClick={() => { setReplyMode(null); setReplyContent(''); }} className="bg-slate-100 text-slate-600 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">إلغاء</button>
-                                                                <button onClick={handleSubmitReply} disabled={submittingReply} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-1">
-                                                                    {submittingReply ? <Loader2 className="animate-spin" size={14}/> : <Send size={14}/>} إرسال
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <button onClick={() => { setReplyMode({id: obs.id, type: 'observation'}); setReplyContent(''); }} className="w-full bg-blue-50 text-blue-700 py-2 rounded-lg text-sm font-bold border border-blue-100 hover:bg-blue-100 transition-colors">
-                                                            تأكيد الاطلاع والرد
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="mt-3 bg-slate-50 p-3 rounded-xl text-xs text-slate-500 flex items-center gap-2 border border-slate-100">
-                                                    <CheckCircle size={16} className="text-emerald-500"/>
-                                                    <div>
-                                                        <span className="font-bold text-emerald-700 block">تم الاطلاع</span>
-                                                        {obs.parentFeedback && <span className="text-slate-600 mt-1 block">رد ولي الأمر: {obs.parentFeedback}</span>}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                    <div className="flex justify-between items-end mt-16 px-10 relative z-10">
+                        <div className="text-center">
+                            <p className="font-bold mb-4">وكيل شؤون الطلاب</p>
+                            <p className="text-slate-400">.............................</p>
                         </div>
-                    )}
+                        <div className="text-center">
+                            <div className="w-24 h-24 border-2 border-slate-300 rounded-full flex items-center justify-center text-slate-300 font-bold mb-2">
+                                الختم
+                            </div>
+                        </div>
+                        <div className="text-center">
+                            <p className="font-bold mb-4">مدير المدرسة</p>
+                            <p className="text-slate-400">.............................</p>
+                        </div>
+                    </div>
+                    <div className="text-center text-xs mt-8 text-slate-400">
+                        تاريخ الإصدار: {certificateData.date} | شهادة إلكترونية معتمدة
+                    </div>
                 </div>
             )}
         </div>
 
-        {/* NEWS DETAILS MODAL */}
-        {selectedNews && (
-            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in" onClick={() => setSelectedNews(null)}>
-                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh] animate-fade-in-up" onClick={e => e.stopPropagation()}>
-                    <div className={`p-6 text-white flex justify-between items-start shrink-0 ${selectedNews.isUrgent ? 'bg-red-600' : 'bg-blue-900'}`}>
-                        <div>
-                            <span className="inline-block px-3 py-1 rounded bg-white/20 text-[10px] font-bold mb-3 backdrop-blur-sm">
-                                {selectedNews.isUrgent ? 'خبر عاجل' : 'خبر مدرسي'}
-                            </span>
-                            <h2 className="text-xl font-bold leading-tight">{selectedNews.title}</h2>
-                            <div className="flex items-center gap-4 mt-4 text-xs text-white/90 font-medium">
-                                <span className="flex items-center gap-1"><Calendar size={14}/> {new Date(selectedNews.createdAt).toLocaleDateString('ar-SA')}</span>
-                                {selectedNews.author && <span className="flex items-center gap-1"><User size={14}/> {selectedNews.author}</span>}
+        {/* --- APP HEADER --- */}
+        <div className="bg-white sticky top-0 z-30 border-b border-slate-100 shadow-sm safe-area-top">
+            <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold text-slate-800">
+                    <div className="bg-blue-50 p-1.5 rounded-lg text-blue-600"><Users size={20}/></div>
+                    <span className="hidden md:inline">بوابة ولي الأمر</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 rounded-full hover:bg-slate-50 transition-colors">
+                        <Bell size={24} className="text-slate-600"/>
+                        {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>}
+                    </button>
+                    <button onClick={handleLogout} className="p-2 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+                        <LogOut size={20}/>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        {/* Notifications Dropdown */}
+        {showNotifications && (
+            <div className="fixed top-16 left-0 right-0 z-40 px-4 md:absolute md:left-4 md:right-auto md:w-80">
+                <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden animate-fade-in-up">
+                    <div className="p-3 border-b border-slate-50 font-bold text-sm bg-slate-50 flex justify-between items-center">
+                        <span>الإشعارات</span>
+                        <button onClick={()=>setShowNotifications(false)}><X size={16}/></button>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                        {notifications.length === 0 ? <p className="p-6 text-center text-xs text-slate-400">لا توجد إشعارات جديدة</p> : notifications.map(n => (
+                            <div key={n.id} className={`p-3 border-b border-slate-50 text-sm hover:bg-slate-50 cursor-pointer ${!n.isRead ? 'bg-blue-50/30' : ''}`} onClick={() => markNotificationRead(n.id)}>
+                                <p className="font-bold text-slate-800 mb-1">{n.title}</p>
+                                <p className="text-xs text-slate-500 leading-relaxed">{n.message}</p>
+                                <span className="text-[10px] text-slate-400 mt-1 block">{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
                             </div>
-                        </div>
-                        <button onClick={() => setSelectedNews(null)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors"><X size={24}/></button>
-                    </div>
-                    <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50/50">
-                        <div className="prose prose-lg text-slate-800 leading-loose whitespace-pre-line font-medium text-base">
-                            {selectedNews.content}
-                        </div>
-                    </div>
-                    <div className="p-4 border-t border-slate-100 bg-white flex justify-end">
-                        <button onClick={() => setSelectedNews(null)} className="px-8 py-3 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors w-full md:w-auto">
-                            إغلاق
-                        </button>
+                        ))}
                     </div>
                 </div>
             </div>
         )}
 
-        {/* SUCCESS BOOKING MODAL */}
-        {showBookingModal && bookingSuccess && (
-             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fade-in" onClick={() => setShowBookingModal(false)}>
-                 <div className="bg-teal-600 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden w-full max-w-md" onClick={e => e.stopPropagation()}>
-                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
-                     <div className="flex justify-between items-start relative z-10">
-                         <div>
-                             <h3 className="text-2xl font-bold mb-1 flex items-center gap-2"><CheckCircle/> تم تأكيد الحجز!</h3>
-                             <p className="opacity-90 text-sm">يرجى إبراز هذا الرمز عند بوابة المدرسة</p>
-                         </div>
-                         <button onClick={() => setShowBookingModal(false)} className="bg-white/20 p-1 rounded-full hover:bg-white/30"><X size={20}/></button>
-                     </div>
-                     <div className="mt-6 bg-white text-slate-900 rounded-2xl p-4 flex flex-col items-center gap-6">
-                         <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
-                              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${bookingSuccess.id}`} alt="Booking QR" className="w-40 h-40 mix-blend-multiply"/>
-                         </div>
-                         <div className="w-full grid grid-cols-2 gap-4 text-sm text-center">
-                             <div className="bg-slate-50 p-2 rounded-lg"><p className="text-slate-400 font-bold text-xs">التاريخ</p><p className="font-bold">{bookingSuccess.slot?.date}</p></div>
-                             <div className="bg-slate-50 p-2 rounded-lg"><p className="text-slate-400 font-bold text-xs">الوقت</p><p className="font-bold">{bookingSuccess.slot?.startTime}</p></div>
-                         </div>
-                         <button onClick={() => setShowBookingModal(false)} className="w-full py-3 bg-teal-600 text-white rounded-xl font-bold">إغلاق</button>
-                     </div>
-                 </div>
-             </div>
-        )}
-
-        {/* DIGITAL ID MODAL */}
-        {showDigitalId && selectedStudent && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-fade-in" onClick={() => setShowDigitalId(false)}>
-                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden relative" onClick={e => e.stopPropagation()}>
-                    <div className="h-32 bg-blue-900 relative">
-                        <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 p-1 bg-white rounded-full">
-                            <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center text-2xl font-bold text-slate-600 border-2 border-slate-200">{selectedStudent.name.charAt(0)}</div>
+        <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+            
+            {/* --- DASHBOARD VIEW (List of Children) --- */}
+            {!selectedStudent ? (
+                <div className="animate-fade-in space-y-6">
+                    {/* Welcome Card */}
+                    <div className="bg-gradient-to-br from-blue-900 to-indigo-900 rounded-3xl p-6 text-white relative overflow-hidden shadow-lg">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+                        <div className="relative z-10">
+                            <h2 className="text-xl font-bold mb-1">مرحباً بك</h2>
+                            <p className="text-blue-200 text-sm">تابع حضور وسلوك أبنائك لحظة بلحظة.</p>
                         </div>
                     </div>
-                    <div className="pt-12 pb-8 px-6 text-center">
-                        <h2 className="text-2xl font-bold text-slate-900">{selectedStudent.name}</h2>
-                        <p className="text-slate-500 text-sm mt-1">طالب منتظم - {selectedStudent.grade}</p>
-                        <div className="my-6 border-t border-b border-slate-100 py-4 grid grid-cols-2 gap-4"><div><p className="text-xs text-slate-400 font-bold uppercase">الرقم الأكاديمي</p><p className="font-mono font-bold text-slate-800">{selectedStudent.studentId}</p></div><div><p className="text-xs text-slate-400 font-bold uppercase">الفصل</p><p className="font-bold text-slate-800">{selectedStudent.className}</p></div></div>
-                        <div className="bg-white p-2 rounded-xl inline-block border border-slate-200"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${selectedStudent.studentId}`} alt="ID QR" className="w-32 h-32" /></div>
-                        <p className="text-xs text-slate-400 mt-4 font-bold">بطاقة تعريفية رقمية - متوسطة عماد الدين زنكي</p>
+
+                    {/* School News (Horizontal Scroll) */}
+                    {news.length > 0 && (
+                        <div>
+                            <div className="flex justify-between items-center mb-3 px-1">
+                                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><Newspaper size={16} className="text-blue-600"/> أخبار المدرسة</h3>
+                            </div>
+                            <div className="flex gap-3 overflow-x-auto pb-4 px-1 snap-x scrollbar-hide">
+                                {news.map(n => (
+                                    <div key={n.id} onClick={() => setSelectedNews(n)} className="snap-center shrink-0 w-64 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm active:scale-95 transition-transform cursor-pointer hover:shadow-md">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${n.isUrgent ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{n.isUrgent ? 'عاجل' : 'خبر'}</span>
+                                            <span className="text-[10px] text-slate-400">{new Date(n.createdAt).toLocaleDateString('ar-SA')}</span>
+                                        </div>
+                                        <h4 className="font-bold text-slate-900 text-sm line-clamp-1 mb-1">{n.title}</h4>
+                                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{n.content}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Children List */}
+                    <div>
+                        <div className="flex justify-between items-center mb-4 px-1">
+                            <h3 className="font-bold text-slate-800 text-lg">أبنائي</h3>
+                            <button onClick={() => setIsAddingChild(true)} className="bg-slate-100 text-slate-600 p-2 rounded-xl hover:bg-slate-200 transition-colors"><Plus size={20}/></button>
+                        </div>
+
+                        {isAddingChild && (
+                            <div className="bg-white p-4 rounded-2xl shadow-lg border border-blue-100 mb-4 animate-fade-in-up">
+                                <h4 className="font-bold text-sm mb-3 text-blue-900">ربط طالب جديد</h4>
+                                <div className="flex gap-2">
+                                    <input 
+                                        autoFocus 
+                                        placeholder="رقم الهوية أو الجوال..." 
+                                        value={newChildInput} 
+                                        onChange={e => setNewChildInput(e.target.value)} 
+                                        className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-100"
+                                    />
+                                    <button onClick={handleAddChild} disabled={loading} className="bg-blue-600 text-white px-4 rounded-xl font-bold">{loading ? <Loader2 className="animate-spin"/> : 'إضافة'}</button>
+                                </div>
+                                <button onClick={() => setIsAddingChild(false)} className="text-xs text-slate-400 mt-2 text-center w-full">إلغاء</button>
+                            </div>
+                        )}
+
+                        {myChildren.length === 0 ? (
+                            <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-slate-200">
+                                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4"><Users className="text-slate-300"/></div>
+                                <p className="font-bold text-slate-500 text-sm">لم يتم ربط أي طلاب بعد</p>
+                                <button onClick={() => setIsAddingChild(true)} className="text-blue-600 text-sm font-bold mt-2">أضف ابنك الآن</button>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {myChildren.map(child => (
+                                    <div key={child.id} onClick={() => handleSelectStudent(child)} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 active:scale-[0.98] transition-all cursor-pointer relative overflow-hidden group hover:border-blue-300 hover:shadow-md">
+                                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                                        <div className="flex items-center gap-4 mb-4">
+                                            <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center text-xl font-bold border border-slate-200 shadow-sm group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                                                {child.name.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-lg text-slate-900 leading-tight">{child.name}</h3>
+                                                <p className="text-xs text-slate-500 mt-1">{child.grade} - {child.className}</p>
+                                            </div>
+                                            <div className="mr-auto bg-slate-50 p-2 rounded-full text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600">
+                                                <ChevronLeft size={20} />
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="bg-amber-50 p-2 rounded-xl flex items-center gap-2">
+                                                <div className="bg-white p-1.5 rounded-lg text-amber-500 shadow-sm"><Star size={14} fill="currentColor"/></div>
+                                                <div>
+                                                    <p className="text-[10px] text-amber-800 font-bold uppercase">التميز</p>
+                                                    <p className="text-xs font-bold text-amber-900">عرض السجل</p>
+                                                </div>
+                                            </div>
+                                            <div className="bg-red-50 p-2 rounded-xl flex items-center gap-2">
+                                                <div className="bg-white p-1.5 rounded-lg text-red-500 shadow-sm"><AlertCircle size={14}/></div>
+                                                <div>
+                                                    <p className="text-[10px] text-red-800 font-bold uppercase">الحضور</p>
+                                                    <p className="text-xs font-bold text-red-900">عرض السجل</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                    <button onClick={() => setShowDigitalId(false)} className="absolute top-4 left-4 bg-black/20 hover:bg-black/40 text-white p-2 rounded-full backdrop-blur-sm transition-colors"><X size={20}/></button>
+                </div>
+            ) : (
+                /* --- STUDENT DETAIL VIEW --- */
+                <div className="animate-fade-in space-y-6 max-w-4xl mx-auto">
+                    {/* Header */}
+                    <div className="flex items-center gap-2 mb-2">
+                        <button onClick={() => setSelectedStudent(null)} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+                            <ArrowRight size={20} className="text-slate-600"/>
+                        </button>
+                        <h2 className="text-lg font-bold text-slate-800">ملف الطالب</h2>
+                    </div>
+
+                    {/* Student Card */}
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 text-center relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-blue-50 to-transparent"></div>
+                        <div className="relative z-10">
+                            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center text-3xl font-bold text-blue-600 border-4 border-white shadow-lg mx-auto mb-3">
+                                {selectedStudent.name.charAt(0)}
+                            </div>
+                            <h2 className="text-xl font-bold text-slate-900">{selectedStudent.name}</h2>
+                            <p className="text-sm text-slate-500">{selectedStudent.grade} - {selectedStudent.className}</p>
+                            
+                            <div className="flex justify-center gap-3 mt-5">
+                                <button onClick={() => setShowDigitalId(true)} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-slate-900/20 active:scale-95 transition-all">
+                                    <CreditCard size={14}/> الهوية الرقمية
+                                </button>
+                                <button onClick={() => navigate(`/submit?studentId=${selectedStudent.studentId}`)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95 transition-all">
+                                    <FileText size={14}/> تقديم عذر
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Scrollable Tabs */}
+                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+                        {[
+                          { id: 'overview', label: 'ملخص', icon: Activity },
+                          { id: 'positive_behavior', label: 'التميز', icon: Trophy }, 
+                          { id: 'calendar', label: 'التقويم', icon: CalendarDays },
+                          { id: 'report', label: 'التقرير', icon: Sparkles },
+                          { id: 'exits', label: 'استئذان', icon: ExitIcon }, 
+                          { id: 'visits', label: 'حجز موعد', icon: CalendarCheck }, 
+                          { id: 'behavior', label: 'مخالفات', icon: ShieldAlert },
+                          { id: 'observations', label: 'ملاحظات', icon: MessageSquare }
+                        ].map(tab => (
+                            <button 
+                                key={tab.id} 
+                                onClick={() => setActiveTab(tab.id as any)} 
+                                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs whitespace-nowrap transition-all border ${activeTab === tab.id ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                            >
+                                <tab.icon size={14}/> {tab.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Content Area */}
+                    <div className="min-h-[300px]">
+                        {loading ? (
+                            <div className="py-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600"/></div>
+                        ) : (
+                            <>
+                                {/* OVERVIEW TAB */}
+                                {activeTab === 'overview' && (
+                                    <div className="space-y-6 animate-fade-in">
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center gap-2">
+                                                <div className="bg-emerald-50 text-emerald-600 p-3 rounded-full"><CheckCircle size={24}/></div>
+                                                <div><h3 className="text-2xl font-bold text-slate-800">{attendanceHistory.filter(x=>x.status==='PRESENT').length}</h3><p className="text-xs text-slate-400">أيام الحضور</p></div>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center gap-2">
+                                                <div className="bg-red-50 text-red-600 p-3 rounded-full"><AlertCircle size={24}/></div>
+                                                <div><h3 className="text-2xl font-bold text-slate-800">{attendanceHistory.filter(x=>x.status==='ABSENT').length}</h3><p className="text-xs text-slate-400">أيام الغياب</p></div>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center gap-2">
+                                                <div className="bg-amber-50 text-amber-600 p-3 rounded-full"><Clock size={24}/></div>
+                                                <div><h3 className="text-2xl font-bold text-slate-800">{attendanceHistory.filter(x=>x.status==='LATE').length}</h3><p className="text-xs text-slate-400">تأخر</p></div>
+                                            </div>
+                                            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center gap-2">
+                                                <div className="bg-yellow-50 text-yellow-600 p-3 rounded-full"><Star size={24} fill="currentColor"/></div>
+                                                <div><h3 className="text-2xl font-bold text-slate-800">{points.total}</h3><p className="text-xs text-slate-400">نقاط التميز</p></div>
+                                            </div>
+                                        </div>
+
+                                        {/* Unexcused Absence Alert */}
+                                        {unexcusedAbsences.length > 0 && (
+                                            <div className="bg-red-50 border border-red-200 rounded-2xl p-5 animate-pulse-slow">
+                                                <h3 className="text-red-800 font-bold flex items-center gap-2 mb-2"><AlertTriangle size={20}/> تنبيه غياب بدون عذر</h3>
+                                                <p className="text-sm text-red-700 mb-3">يوجد أيام غياب لم يتم تقديم عذر لها. يرجى تقديم عذر لتجنب حسم الدرجات.</p>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {unexcusedAbsences.map((rec, i) => (
+                                                        <span key={i} className="bg-white border border-red-200 text-red-600 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-2">
+                                                            {rec.date}
+                                                            <button onClick={() => navigate(`/submit?studentId=${selectedStudent.studentId}&date=${rec.date}`)} className="text-blue-600 underline">تقديم عذر</button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* CALENDAR TAB (Renamed from Attendance) */}
+                                {activeTab === 'calendar' && (
+                                    <div className="animate-fade-in">
+                                        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm mb-4">
+                                            <div className="flex justify-between items-center mb-6">
+                                                <button onClick={() => setCalendarMonth(new Date(calendarMonth.setMonth(calendarMonth.getMonth() - 1)))} className="p-2 bg-slate-50 rounded-full"><ChevronRight size={16}/></button>
+                                                <h3 className="font-bold text-slate-800 text-lg">{calendarMonth.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })}</h3>
+                                                <button onClick={() => setCalendarMonth(new Date(calendarMonth.setMonth(calendarMonth.getMonth() + 1)))} className="p-2 bg-slate-50 rounded-full"><ChevronLeft size={16}/></button>
+                                            </div>
+                                            
+                                            {/* Days Header */}
+                                            <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-400 mb-2">
+                                                <div>أ</div><div>إ</div><div>ث</div><div>أ</div><div>خ</div><div>ج</div><div>س</div>
+                                            </div>
+                                            
+                                            {/* Days Grid */}
+                                            <div className="grid grid-cols-7 gap-2">
+                                                {getDaysInMonth(calendarMonth).map((date, i) => {
+                                                    if (!date) return <div key={i}></div>;
+                                                    
+                                                    const dateStr = date.toISOString().split('T')[0];
+                                                    const attRecord = attendanceHistory.find(r => r.date === dateStr);
+                                                    // Check for Approved/Pending Excuse
+                                                    const hasExcuse = history.find(req => req.date === dateStr && req.status !== RequestStatus.REJECTED);
+                                                    // Check for Exit Permission
+                                                    const hasExit = exitPermissions.find(e => e.createdAt.startsWith(dateStr));
+
+                                                    let bgClass = 'bg-slate-50 text-slate-300'; // Default empty
+                                                    let label = '';
+
+                                                    if (attRecord?.status === AttendanceStatus.ABSENT) {
+                                                        if (hasExcuse) {
+                                                            bgClass = 'bg-blue-500 text-white'; // Excused Absence
+                                                            label = 'غ (عذر)';
+                                                        } else {
+                                                            bgClass = 'bg-red-500 text-white'; // Unexcused Absence
+                                                            label = 'غ';
+                                                        }
+                                                    } else if (attRecord?.status === AttendanceStatus.LATE) {
+                                                        bgClass = 'bg-amber-400 text-white'; // Late
+                                                        label = 'ت';
+                                                    } else if (attRecord?.status === AttendanceStatus.PRESENT) {
+                                                        bgClass = 'bg-emerald-500 text-white'; // Present
+                                                        label = 'ح';
+                                                    }
+
+                                                    // Overlay Exit Permission if present (Purple)
+                                                    if (hasExit) {
+                                                        // Use purple border or background if present
+                                                        bgClass = 'bg-purple-500 text-white';
+                                                        label = 'استئذان';
+                                                    }
+
+                                                    return (
+                                                        <div key={i} className={`h-12 rounded-xl flex flex-col items-center justify-center text-xs font-bold relative overflow-hidden transition-all hover:scale-105 ${bgClass}`}>
+                                                            <span>{date.getDate()}</span>
+                                                            {/* Small dot indicator if needed */}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {/* Legend */}
+                                            <div className="mt-6 border-t border-slate-100 pt-4">
+                                                <p className="text-xs font-bold text-slate-400 mb-3 flex items-center gap-1"><Info size={12}/> توضيح الألوان:</p>
+                                                <div className="flex flex-wrap gap-3 text-[10px] font-bold">
+                                                    <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-emerald-500"></span> حضور</div>
+                                                    <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500"></span> غياب بدون عذر</div>
+                                                    <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-500"></span> غياب بعذر</div>
+                                                    <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-400"></span> تأخر</div>
+                                                    <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-purple-500"></span> استئذان</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* SMART REPORT TAB */}
+                                {activeTab === 'report' && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 rounded-3xl text-white shadow-lg relative overflow-hidden">
+                                            <div className="relative z-10">
+                                                <h3 className="font-bold text-lg mb-2 flex items-center gap-2"><Sparkles size={20}/> التقرير التربوي الذكي</h3>
+                                                <p className="text-blue-100 text-sm mb-4">تحليل شامل لأداء الطالب (سلوكياً، دراسياً، وانضباطياً) باستخدام الذكاء الاصطناعي.</p>
+                                                
+                                                {!smartReport ? (
+                                                    <button onClick={handleGenerateSmartReport} disabled={generatingReport} className="bg-white text-blue-700 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg hover:bg-blue-50 transition-all flex items-center gap-2">
+                                                        {generatingReport ? <Loader2 className="animate-spin" size={16}/> : <Sparkles size={16}/>} 
+                                                        توليد التقرير الآن
+                                                    </button>
+                                                ) : (
+                                                    <button onClick={() => setSmartReport(null)} className="bg-white/20 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-white/30">إعادة التوليد</button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {smartReport && (
+                                            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm leading-relaxed text-slate-700 text-sm whitespace-pre-line animate-fade-in">
+                                                {smartReport}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* VISITS & BOOKING TAB */}
+                                {activeTab === 'visits' && (
+                                    <div className="space-y-6 animate-fade-in">
+                                        
+                                        {/* Available Slots */}
+                                        <div className="space-y-3">
+                                            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><CalendarCheck size={16} className="text-blue-600"/> المواعيد المتاحة للحجز</h3>
+                                            {availableSlots.length === 0 ? (
+                                                <div className="p-8 text-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400 text-sm">
+                                                    لا توجد مواعيد متاحة حالياً. يرجى مراجعة المدرسة.
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                    {availableSlots.map(slot => (
+                                                        <button 
+                                                            key={slot.id} 
+                                                            onClick={() => handleBookSlot(slot)}
+                                                            className="bg-white border border-slate-200 p-4 rounded-xl text-center hover:border-blue-500 hover:shadow-md transition-all group"
+                                                        >
+                                                            <p className="font-bold text-blue-900 text-lg group-hover:text-blue-600">{slot.startTime}</p>
+                                                            <p className="text-xs text-slate-400 mt-1">{slot.date}</p>
+                                                            <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded mt-2 inline-block">حجز</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* My Appointments History */}
+                                        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                                            <div className="p-4 bg-slate-50 border-b border-slate-100 font-bold text-slate-700 text-sm">سجل حجوزاتي</div>
+                                            {myAppointments.length === 0 ? (
+                                                <p className="p-6 text-center text-slate-400 text-xs">لا يوجد حجوزات سابقة.</p>
+                                            ) : (
+                                                <div className="divide-y divide-slate-50">
+                                                    {myAppointments.map(app => (
+                                                        <div key={app.id} className="p-4 flex justify-between items-center text-sm">
+                                                            <div>
+                                                                <p className="font-bold text-slate-800">{app.slot?.startTime} - {app.slot?.date}</p>
+                                                                <p className="text-xs text-slate-500">{app.visitReason}</p>
+                                                            </div>
+                                                            <span className={`px-2 py-1 rounded text-xs font-bold ${app.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                                                                {app.status === 'completed' ? 'تمت الزيارة' : 'قادم'}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* OTHER TABS (Behavior, Positive, etc.) */}
+                                {/* Reuse previous logic but ensure container width is handled by parent */}
+                                {activeTab === 'positive_behavior' && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-6 rounded-3xl text-white shadow-lg text-center">
+                                            <Trophy size={40} className="mx-auto mb-2 text-yellow-300 drop-shadow-sm"/>
+                                            <h2 className="text-3xl font-extrabold">{points.total}</h2>
+                                            <p className="text-emerald-100 text-sm font-bold">إجمالي نقاط التميز</p>
+                                        </div>
+                                        {positiveObservations.length === 0 ? (
+                                            <p className="text-center text-slate-400 text-sm py-10">لا يوجد سجلات حتى الآن.</p>
+                                        ) : (
+                                            <div className="grid gap-3">
+                                                {positiveObservations.map(obs => (
+                                                    <div key={obs.id} className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-between">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="bg-emerald-50 p-2 rounded-xl text-emerald-600"><Medal size={20}/></div>
+                                                            <div>
+                                                                <p className="font-bold text-slate-800 text-sm">{obs.content.replace('تعزيز سلوكي: ', '').split('(')[0]}</p>
+                                                                <p className="text-[10px] text-slate-400">{obs.date}</p>
+                                                            </div>
+                                                        </div>
+                                                        <button onClick={() => handlePrintCertificate(obs)} className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg font-bold border border-emerald-100 flex items-center gap-1">
+                                                            <Printer size={12}/> شهادة
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* DIGITAL ID CARD */}
+                                {showDigitalId && (
+                                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/80 backdrop-blur-md animate-fade-in" onClick={() => setShowDigitalId(false)}>
+                                        <div className="w-full max-w-sm aspect-[1.586/1] bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 rounded-3xl shadow-2xl relative overflow-hidden border border-white/10" onClick={e => e.stopPropagation()}>
+                                            {/* Holographic Effect */}
+                                            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/diagonal-stripes.png')] opacity-10"></div>
+                                            <div className="absolute -top-20 -right-20 w-48 h-48 bg-blue-500 rounded-full blur-[60px] opacity-40"></div>
+                                            <div className="absolute bottom-0 left-0 w-40 h-40 bg-purple-500 rounded-full blur-[60px] opacity-40"></div>
+                                            
+                                            <div className="relative z-10 p-6 h-full flex flex-col justify-between">
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <p className="text-[10px] text-blue-200 font-bold tracking-widest uppercase mb-1">Student ID Card</p>
+                                                        <h3 className="text-lg font-bold text-white leading-tight">{SCHOOL_NAME}</h3>
+                                                    </div>
+                                                    <img src={SCHOOL_LOGO} alt="Logo" className="w-10 h-10 object-contain drop-shadow-md bg-white/10 rounded-full p-1"/>
+                                                </div>
+                                                
+                                                <div className="flex items-end justify-between mt-auto">
+                                                    <div>
+                                                        <p className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Student Name</p>
+                                                        <p className="text-xl font-bold text-white mb-3 tracking-wide">{selectedStudent.name}</p>
+                                                        <div className="flex gap-4">
+                                                            <div>
+                                                                <p className="text-[9px] text-slate-400 font-bold uppercase">ID Number</p>
+                                                                <p className="text-sm font-mono text-blue-100">{selectedStudent.studentId}</p>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[9px] text-slate-400 font-bold uppercase">Grade</p>
+                                                                <p className="text-sm font-mono text-blue-100">{selectedStudent.grade}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-white p-1.5 rounded-lg">
+                                                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${selectedStudent.studentId}`} className="w-16 h-16 mix-blend-multiply" alt="QR"/>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Exits */}
+                                {activeTab === 'exits' && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <div className="bg-orange-50 border border-orange-100 p-5 rounded-2xl relative overflow-hidden">
+                                            <div className="relative z-10 text-center">
+                                                <h3 className="text-lg font-bold text-orange-900 mb-2">بطاقة الخروج</h3>
+                                                {(() => {
+                                                    const activeExit = exitPermissions.find(p => p.status === 'pending_pickup');
+                                                    if (activeExit) {
+                                                        return (
+                                                            <div className="bg-white p-4 rounded-xl shadow-lg border border-orange-100 inline-block">
+                                                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=EXIT:${activeExit.id}`} alt="Exit QR" className="w-32 h-32 mx-auto mix-blend-multiply mb-2"/>
+                                                                <p className="text-xs font-bold text-slate-500">امسح عند البوابة</p>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return <p className="text-sm text-orange-800 opacity-70">لا يوجد إذن نشط حالياً.</p>;
+                                                })()}
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                                            <h3 className="font-bold text-slate-800 mb-3 text-sm">سجل سابق</h3>
+                                            <div className="space-y-3">
+                                                {exitPermissions.map(p => (
+                                                    <div key={p.id} className="flex justify-between items-center p-3 border-b border-slate-50 last:border-0 text-sm">
+                                                        <span>{p.reason || 'بدون سبب'}</span>
+                                                        <span className="text-xs text-slate-400">{new Date(p.createdAt).toLocaleDateString('ar-SA')}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Behaviors & Observations with Reply */}
+                                {(activeTab === 'behavior' || activeTab === 'observations') && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        {(activeTab === 'behavior' ? behaviorHistory : observations).length === 0 ? <p className="text-center py-10 text-slate-400 text-sm">سجل نظيف.</p> : (activeTab === 'behavior' ? behaviorHistory : observations).map((rec: any) => (
+                                            <div key={rec.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <h4 className="font-bold text-slate-800 text-sm">{activeTab === 'behavior' ? rec.violationName : rec.staffName}</h4>
+                                                    <span className="text-xs text-slate-400">{rec.date}</span>
+                                                </div>
+                                                <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded-xl mb-3 leading-relaxed">{activeTab === 'behavior' ? rec.actionTaken : rec.content}</p>
+                                                
+                                                {/* Reply Section */}
+                                                {!rec.parentViewed ? (
+                                                    replyMode?.id === rec.id ? (
+                                                        <div className="animate-fade-in">
+                                                            <textarea className="w-full p-3 border rounded-xl text-sm mb-2 outline-none focus:ring-2 focus:ring-blue-100" placeholder="اكتب ردك..." value={replyContent} onChange={e => setReplyContent(e.target.value)} autoFocus></textarea>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => { setReplyMode(null); setReplyContent(''); }} className="flex-1 bg-slate-100 text-slate-600 py-2 rounded-lg text-xs font-bold">إلغاء</button>
+                                                                <button onClick={handleSubmitReply} disabled={submittingReply} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-xs font-bold">{submittingReply ? <Loader2 className="animate-spin mx-auto" size={14}/> : 'إرسال'}</button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <button onClick={() => { setReplyMode({id: rec.id, type: activeTab === 'behavior' ? 'behavior' : 'observation'}); setReplyContent(''); }} className="w-full bg-blue-50 text-blue-600 py-2 rounded-lg text-xs font-bold border border-blue-100 hover:bg-blue-100">تأكيد الاطلاع والرد</button>
+                                                    )
+                                                ) : (
+                                                    <div className="bg-emerald-50 p-2 rounded-lg text-xs text-emerald-700 font-bold flex items-center gap-2 border border-emerald-100">
+                                                        <CheckCircle size={14}/> تم الاطلاع {rec.parentFeedback && `- الرد: ${rec.parentFeedback}`}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+
+        {/* BOOKING MODAL */}
+        {showBookingModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white rounded-3xl p-6 w-full max-w-sm">
+                    {bookingSuccess ? (
+                        <div className="text-center">
+                            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4"><CheckCircle size={32}/></div>
+                            <h3 className="text-xl font-bold text-slate-900">تم حجز الموعد بنجاح</h3>
+                            <p className="text-sm text-slate-500 mt-2">يرجى إبراز الهوية عند البوابة</p>
+                            <button onClick={()=>{setShowBookingModal(false); setBookingSuccess(null)}} className="mt-6 w-full bg-slate-100 py-3 rounded-xl font-bold">إغلاق</button>
+                        </div>
+                    ) : (
+                        <form onSubmit={(e)=>{e.preventDefault(); if(availableSlots.length>0) handleBookSlot(availableSlots[0]); /* Logic handled in button */}} className="space-y-4">
+                            <h3 className="font-bold text-lg">تأكيد الحجز</h3>
+                            <input value={parentNameForVisit} onChange={e=>setParentNameForVisit(e.target.value)} placeholder="اسم ولي الأمر (الزائر)" className="w-full p-3 border rounded-xl font-bold text-sm" required/>
+                            <input value={visitReason} onChange={e=>setVisitReason(e.target.value)} placeholder="سبب الزيارة" className="w-full p-3 border rounded-xl font-bold text-sm" required/>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={()=>setShowBookingModal(false)} className="flex-1 bg-slate-100 py-3 rounded-xl font-bold text-sm">إلغاء</button>
+                                <button type="submit" disabled={isBooking} className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold text-sm">{isBooking ? <Loader2 className="animate-spin mx-auto"/> : 'تأكيد'}</button>
+                            </div>
+                        </form>
+                    )}
+                </div>
+            </div>
+        )}
+
+        {/* DETAILS MODALS (NEWS) */}
+        {selectedNews && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-md animate-fade-in" onClick={() => setSelectedNews(null)}>
+                <div className="bg-white w-full max-w-sm rounded-3xl p-6 relative" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => setSelectedNews(null)} className="absolute top-4 left-4 bg-slate-100 p-2 rounded-full"><X size={16}/></button>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded mb-3 inline-block ${selectedNews.isUrgent ? 'bg-red-100 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{selectedNews.isUrgent ? 'عاجل' : 'خبر'}</span>
+                    <h2 className="text-xl font-bold text-slate-900 mb-2">{selectedNews.title}</h2>
+                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line max-h-60 overflow-y-auto">{selectedNews.content}</p>
+                    <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-400 flex justify-between">
+                        <span>{new Date(selectedNews.createdAt).toLocaleDateString('ar-SA')}</span>
+                        <span>{selectedNews.author}</span>
+                    </div>
                 </div>
             </div>
         )}

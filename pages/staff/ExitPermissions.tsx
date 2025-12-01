@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { LogOut, Plus, Search, Calendar, User, Phone, CheckCircle, Clock, XCircle, Printer, X } from 'lucide-react';
 import { getStudents, addExitPermission, getExitPermissions } from '../../services/storage';
@@ -98,7 +99,7 @@ const ExitPermissions: React.FC = () => {
         @media print {
           body * { visibility: hidden; }
           #exit-report-print, #exit-report-print * { visibility: visible; }
-          #exit-report-print { position: absolute; left: 0; top: 0; width: 100%; padding: 0; background: white; z-index: 9999; }
+          #exit-report-print { position: absolute; left: 0; top: 0; width: 100%; background: white; z-index: 9999; }
           .no-print { display: none !important; }
         }
       `}</style>
@@ -107,38 +108,44 @@ const ExitPermissions: React.FC = () => {
       <div id="exit-report-print" className="hidden" dir="rtl">
           <div className="print-page-a4">
             <img src="https://www.raed.net/img?id=1474173" className="print-watermark" alt="Watermark" />
+            
+            {/* Standard Ministry Header */}
             <div className="print-header">
                 <div className="print-header-right">
                     <p>المملكة العربية السعودية</p>
                     <p>وزارة التعليم</p>
                     <p>إدارة التعليم ....................</p>
                     <p>{SCHOOL_NAME}</p>
+                    <p>وكالة شؤون الطلاب</p>
                 </div>
                 <div className="print-header-center">
                     <img src="https://www.raed.net/img?id=1474173" className="print-logo" alt="Logo" />
                 </div>
                 <div className="print-header-left">
+                    <p>Kingdom of Saudi Arabia</p>
                     <p>Ministry of Education</p>
-                    <p>Student Exit Log</p>
-                    <p>{reportDate}</p>
+                    <p>Student Affairs</p>
+                    <div className="mt-2 text-center text-xs font-bold border-2 border-black p-1 inline-block">
+                        {reportDate}
+                    </div>
                 </div>
             </div>
 
-            <div className="print-content">
+            <div className="print-content px-4">
                 <div className="text-center mb-6">
-                    <h1 className="text-2xl font-extrabold underline underline-offset-8 mt-4">بيان استئذان الطلاب اليومي</h1>
+                    <h1 className="official-title">كشف استئذان الطلاب اليومي</h1>
                 </div>
 
                 <table className="w-full text-right border-collapse border border-black text-sm mt-4">
                     <thead>
                         <tr className="bg-gray-100">
-                            <th className="border border-black p-2 w-10">م</th>
-                            <th className="border border-black p-2">اسم الطالب</th>
+                            <th className="border border-black p-2 w-10 text-center">م</th>
+                            <th className="border border-black p-2 w-1/4">اسم الطالب</th>
                             <th className="border border-black p-2">الصف / الفصل</th>
-                            <th className="border border-black p-2">ولي الأمر (المستلم)</th>
+                            <th className="border border-black p-2">المستلم (ولي الأمر)</th>
                             <th className="border border-black p-2">سبب الاستئذان</th>
-                            <th className="border border-black p-2">المصرح (الموظف)</th>
-                            <th className="border border-black p-2">وقت الخروج</th>
+                            <th className="border border-black p-2">المصرح</th>
+                            <th className="border border-black p-2 text-center">وقت الخروج</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -151,22 +158,23 @@ const ExitPermissions: React.FC = () => {
                                     <td className="border border-black p-2">{p.parentName}</td>
                                     <td className="border border-black p-2">{p.reason}</td>
                                     <td className="border border-black p-2">{p.createdByName || '-'}</td>
-                                    <td className="border border-black p-2 text-center">
+                                    <td className="border border-black p-2 text-center font-bold">
                                         {p.status === 'completed' && p.completedAt 
                                             ? new Date(p.completedAt).toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'}) 
-                                            : 'انتظار'}
+                                            : '---'}
                                     </td>
                                 </tr>
                             ))
                         ) : (
-                            <tr><td colSpan={7} className="border border-black p-4 text-center">لا يوجد استئذان اليوم</td></tr>
+                            <tr><td colSpan={7} className="border border-black p-8 text-center font-bold">لا توجد حالات استئذان مسجلة لهذا اليوم</td></tr>
                         )}
                     </tbody>
                 </table>
 
-                <div className="mt-16 flex justify-between px-12 text-lg">
-                    <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>.............................</p></div>
-                    <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
+                <div className="footer-signatures">
+                    <div className="signature-box"><p className="signature-title">الموظف المختص</p><p>.............................</p></div>
+                    <div className="signature-box"><p className="signature-title">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
+                    <div className="signature-box"><p className="signature-title">مدير المدرسة</p><p>.............................</p></div>
                 </div>
             </div>
           </div>
@@ -187,7 +195,7 @@ const ExitPermissions: React.FC = () => {
 
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 justify-between items-center">
             <div className="relative w-full md:w-auto">
-                <input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100" />
+                <input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-orange-100 w-full" />
                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             </div>
             <div className="relative w-full md:w-80">
@@ -212,14 +220,14 @@ const ExitPermissions: React.FC = () => {
                             <div>
                                 <h3 className="font-bold text-slate-900">{perm.studentName}</h3>
                                 <p className="text-xs text-slate-500">{perm.grade} - {perm.className}</p>
-                                <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
+                                <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
                                     <span className="flex items-center gap-1"><User size={12}/> ولي الأمر: {perm.parentName}</span>
                                     {perm.createdByName && <span className="flex items-center gap-1 font-bold text-slate-500 bg-slate-50 px-2 rounded">المصرح: {perm.createdByName}</span>}
                                 </div>
                             </div>
                         </div>
                         
-                        <div className="flex flex-col items-end gap-1 w-full md:w-auto">
+                        <div className="flex flex-col items-end gap-1 w-full md:w-auto mt-2 md:mt-0">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${perm.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
                                 {perm.status === 'completed' ? <CheckCircle size={14}/> : <Clock size={14}/>}
                                 {perm.status === 'completed' ? 'تم الخروج' : 'بانتظار ولي الأمر'}

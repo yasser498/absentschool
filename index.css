@@ -1,3 +1,4 @@
+
 /* Global Styles */
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@200;300;400;500;600;700;800&display=swap');
 
@@ -35,136 +36,219 @@ select option {
 .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
 .animate-fade-in-up { animation: fadeInUp 0.5s ease-out forwards; }
 
+/* Floating Dock Animation */
+.floating-dock button {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.floating-dock button:hover {
+  transform: translateY(-10px) scale(1.1);
+}
+
 /* ========================================= */
-/* PRINT STYLES - PROFESSIONAL A4 TEMPLATE   */
+/* PRINT STYLES - OFFICIAL MOE TEMPLATE      */
 /* ========================================= */
 
 @media print {
   @page {
     size: A4;
-    margin: 4mm; /* Exact 4mm margin */
+    margin: 4mm; /* Exact 4mm margins as requested */
   }
 
   html, body {
     width: 210mm;
     height: 297mm;
+    background-color: white !important;
+    color: black !important;
     margin: 0;
     padding: 0;
-    background-color: white !important;
+    font-size: 11pt; /* Optimal reading size for A4 */
+    line-height: 1.5;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* Hide everything by default */
-  body * {
-    visibility: hidden;
+  /* CRITICAL: Hide Sidebar and Navigation strictly */
+  aside, nav, header, footer, button, .no-print, .sidebar, .floating-dock, .admin-header, .custom-scrollbar::-webkit-scrollbar, .hidden-print {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
   }
 
-  /* Define visible print containers */
-  #gate-report, #gate-report *,
-  #print-area, #print-area *,
-  #staff-report-print, #staff-report-print *,
-  #print-container, #print-container *,
-  #session-report-print, #session-report-print *,
-  #exit-report-print, #exit-report-print * {
-    visibility: visible;
-  }
-
-  /* Print Container Positioning */
-  #gate-report,
-  #print-area,
-  #staff-report-print,
-  #print-container,
-  #session-report-print,
-  #exit-report-print {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    background: white !important;
-    z-index: 99999;
+  /* Force Main Content to Full Width */
+  main, #root, body {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
     display: block !important;
-    color: black !important;
   }
 
-  /* Official A4 Page Frame */
+  /* Specific Print Container Logic */
+  #print-container, .printable-area, #exit-report-print, #staff-report-print, #gate-report, #print-area {
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: white !important;
+    z-index: 9999;
+    padding: 0 !important; /* Let @page handle margins */
+    margin: 0 !important;
+    visibility: visible !important;
+  }
+  
+  /* Reset visibility for children */
+  #print-container *, .printable-area *, #exit-report-print *, #staff-report-print *, #gate-report *, #print-area * {
+    visibility: visible !important;
+  }
+
+  /* Watermark Logic - Ministry Logo */
   .print-page-a4 {
     position: relative;
     width: 100%;
-    min-height: 290mm; /* Ensure it fills the page */
-    padding: 10mm; 
-    box-sizing: border-box;
-    background: white;
+    min-height: 280mm;
     overflow: hidden;
   }
 
-  /* Watermark Styling - Professional Look */
   .print-watermark {
-    position: absolute;
+    position: fixed; /* Fixed to center of page even if content scrolls */
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 100mm; 
-    height: auto;
-    opacity: 0.06; /* Very subtle */
+    width: 50%;
+    opacity: 0.05; /* Very subtle */
     z-index: -1;
     pointer-events: none;
     filter: grayscale(100%);
   }
 
-  /* Ensure content sits above watermark */
-  .print-content {
-    position: relative;
-    z-index: 1;
-  }
-
-  /* Header Styling */
+  /* Official Header Layout */
   .print-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     border-bottom: 2px solid #000;
-    padding-bottom: 15px;
-    margin-bottom: 30px;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
     width: 100%;
   }
-  
+
   .print-header-right, .print-header-left {
-    font-size: 11px;
+    text-align: center;
     font-weight: bold;
-    line-height: 1.5;
+    font-size: 9pt;
+    line-height: 1.4;
+    width: 30%;
+    flex-shrink: 0;
   }
-  
+
+  .print-header-center {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding-top: 0;
+  }
+
   .print-logo {
-    height: 80px;
+    max-height: 80px; /* Constrain height to avoid pushing content */
     width: auto;
     object-fit: contain;
   }
 
-  /* Table Styling */
+  /* Official Title */
+  .official-title {
+    text-align: center;
+    font-size: 16pt;
+    font-weight: 800;
+    text-decoration: underline;
+    text-underline-offset: 5px;
+    margin-bottom: 25px;
+    margin-top: 10px;
+  }
+
+  /* Signature Section */
+  .footer-signatures {
+    margin-top: 50px;
+    display: flex;
+    justify-content: space-between;
+    page-break-inside: avoid;
+    width: 100%;
+    padding: 0 10px;
+  }
+  
+  .signature-box {
+    text-align: center;
+    width: 30%;
+  }
+  
+  .signature-title {
+    font-weight: bold;
+    margin-bottom: 30px;
+    font-size: 11pt;
+  }
+
+  /* Certificate Styles */
+  .certificate-border {
+    border: 8px double #1e3a8a;
+    padding: 15px;
+    height: 98%;
+    position: relative;
+    background: white;
+  }
+  
+  /* Tables */
   table {
     width: 100% !important;
-    border-collapse: collapse !important;
-    margin-top: 10px;
-    font-size: 12px;
+    border-collapse: collapse;
+    page-break-inside: auto;
   }
-
+  
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  
   th, td {
-    border: 1px solid #000 !important;
-    padding: 8px !important;
-    text-align: center !important;
-    color: #000 !important;
+    padding: 6px;
+    font-size: 10pt;
   }
 
-  th {
-    background-color: #f0f0f0 !important;
-    font-weight: bold !important;
+  /* Referral Report Specifics */
+  .referral-box {
+    border: 1px solid #000;
+    padding: 8px;
+    margin-bottom: 12px;
+    position: relative;
+    background-color: #fff;
+    page-break-inside: avoid;
+  }
+  
+  .referral-box-title {
+    background: #e5e5e5 !important;
+    padding: 4px 8px;
+    font-weight: bold;
+    font-size: 10pt;
+    border-bottom: 1px solid #000;
+    margin: -8px -8px 8px -8px;
+    display: block;
+    -webkit-print-color-adjust: exact;
   }
 
-  /* Hide no-print elements */
-  .no-print {
-    display: none !important;
+  .referral-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  
+  .referral-row {
+    font-size: 10pt;
+  }
+  
+  .referral-label {
+    font-weight: bold;
+    margin-left: 5px;
   }
 }

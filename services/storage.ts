@@ -137,13 +137,21 @@ export const suggestBehaviorAction = async (violationName: string, historyCount:
 };
 
 export const generateGuidancePlan = async (studentName: string, history: any) => {
+    const counselorName = await getCounselorName();
     const prompt = `
-    اكتب مسودة "خطة علاجية فردية" للطالب ${studentName}.
-    المشاكل المرصودة: ${history}.
+    بصفتك خبيراً تربوياً، قم بإعداد "خطة علاجية فردية" رسمية وجاهزة للطباعة للطالب: ${studentName}.
+    
+    سياق الحالة والملاحظات: ${history}.
+    
     المطلوب:
-    1. تشخيص مبدئي للمشكلة.
-    2. هدف الجلسة الإرشادية القادمة.
-    3. خطوتان عمليتان لتعديل السلوك.
+    اكتب الخطة مباشرة بصيغة رسمية (بدون مقدمات مثل "إليك المسودة").
+    الهيكل المطلوب:
+    1. التشخيص التربوي (صياغة مهنية للمشكلة).
+    2. الأهداف السلوكية (ما نريد تحقيقه).
+    3. الإجراءات العلاجية (خطوات عملية محددة للمعلم وولي الأمر والطالب).
+    4. التوصيات الختامية.
+
+    استخدم لغة عربية فصحى رسمية جداً، بصيغة المتكلم (الموجه الطلابي).
     `;
     return await generateSmartContent(prompt);
 };
@@ -316,6 +324,30 @@ export const uploadFile = async (file: File): Promise<string | null> => {
 export const getStudents = async (force = false) => { const { data, error } = await supabase.from('students').select('*'); if (error) { console.error(error); return []; } return data.map(mapStudentFromDB); };
 export const getStudentsSync = () => null;
 export const getStudentByCivilId = async (id: string) => { const { data, error } = await supabase.from('students').select('*').eq('student_id', id).single(); if (error) return null; return mapStudentFromDB(data); };
+
+// New Function: Search students by phone number
+export const getStudentsByPhone = async (phone: string): Promise<Student[]> => {
+    // Normalize input (remove spaces, dashes)
+    let cleanPhone = phone.replace(/\s+/g, '').replace(/-/g, '');
+    
+    // Create variations to check against DB (stored as 05... usually)
+    // 1. If starts with 966, try replacing with 0
+    let variations = [cleanPhone];
+    if (cleanPhone.startsWith('966')) {
+        variations.push('0' + cleanPhone.substring(3));
+    } else if (cleanPhone.startsWith('05')) {
+        variations.push('966' + cleanPhone.substring(1));
+    }
+
+    const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .in('phone', variations);
+
+    if (error || !data) return [];
+    return data.map(mapStudentFromDB);
+};
+
 export const addStudent = async (student: Student) => { const { data, error } = await supabase.from('students').insert(mapStudentToDB(student)).select().single(); if (error) throw new Error(error.message); return mapStudentFromDB(data); };
 export const updateStudent = async (student: Student) => { const { error } = await supabase.from('students').update(mapStudentToDB(student)).eq('student_id', student.studentId); if (error) throw new Error(error.message); };
 export const deleteStudent = async (id: string) => { const { error } = await supabase.from('students').delete().eq('id', id); if (error) throw new Error(error.message); };
@@ -467,9 +499,10 @@ export const updateBehaviorRecord = async (record: BehaviorRecord) => { const { 
 export const deleteBehaviorRecord = async (id: string) => { const { error } = await supabase.from('behaviors').delete().eq('id', id); if (error) throw new Error(error.message); };
 export const acknowledgeBehavior = async (id: string, feedback: string) => { await supabase.from('behaviors').update({ parent_viewed: true, parent_feedback: feedback, parent_viewed_at: new Date().toISOString() }).eq('id', id); };
 export const clearBehaviorRecords = async () => { await supabase.from('behaviors').delete().neq('id', '0'); };
-export const getStudentObservations = async (studentId?: string) => {
+export const getStudentObservations = async (studentId?: string, type?: string) => {
     let query = supabase.from('observations').select('*');
     if (studentId) query = query.eq('student_id', studentId);
+    if (type) query = query.eq('type', type);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) return [];
     return data.map(mapObservationFromDB);
@@ -511,6 +544,8 @@ export const updateReferralStatus = async (id: string, status: string, outcome?:
 };
 export const clearReferrals = async () => { await supabase.from('referrals').delete().neq('id', '0'); };
 export const addGuidanceSession = async (session: GuidanceSession) => { const { error } = await supabase.from('guidance_sessions').insert(mapSessionToDB(session)); if (error) throw new Error(error.message); };
+export const updateGuidanceSession = async (session: GuidanceSession) => { const { error } = await supabase.from('guidance_sessions').update(mapSessionToDB(session)).eq('id', session.id); if (error) throw new Error(error.message); };
+export const deleteGuidanceSession = async (id: string) => { const { error } = await supabase.from('guidance_sessions').delete().eq('id', id); if (error) throw new Error(error.message); };
 export const getGuidanceSessions = async () => { const { data, error } = await supabase.from('guidance_sessions').select('*').order('date', { ascending: false }); if (error) return []; return data.map(mapSessionFromDB); };
 
 export const saveBotContext = async (content: string) => {
@@ -544,7 +579,24 @@ export const getMyExitPermissions = async (studentIds: string[]) => { if (studen
 export const completeExitPermission = async (id: string) => { const { error } = await supabase.from('exit_permissions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id); if (error) throw new Error(error.message); };
 
 export const getAvailableSlots = async (date?: string) => { let query = supabase.from('appointment_slots').select('*'); if (date) query = query.eq('date', date); else { const today = new Date().toISOString().split('T')[0]; query = query.gte('date', today); } const { data, error } = await query.order('date', { ascending: true }).order('start_time', { ascending: true }); if (error) return []; return data.map((s: any) => ({ id: s.id, date: s.date, startTime: s.start_time, endTime: s.end_time, maxCapacity: s.max_capacity, currentBookings: s.current_bookings })); };
-export const generateDefaultAppointmentSlots = async (date: string) => { const slots = []; const startHour = 7; const startMinute = 30; const endHour = 12; let current = new Date(`${date}T${startHour.toString().padStart(2,'0')}:${startMinute.toString().padStart(2,'0')}:00`); const end = new Date(`${date}T${endHour.toString().padStart(2,'0')}:00:00`); while (current < end) { const startTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}); current.setMinutes(current.getMinutes() + 30); const endTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}); slots.push({ date: date, start_time: startTime, end_time: endTime, max_capacity: 5, current_bookings: 0 }); } const { error } = await supabase.from('appointment_slots').insert(slots); if (error) throw new Error(error.message); };
+export const generateDefaultAppointmentSlots = async (date: string) => { 
+    const slots = []; 
+    // Updated Logic: 8:00 AM to 11:00 AM, 30 min intervals, Capacity 3
+    const startHour = 8; 
+    const startMinute = 0; 
+    const endHour = 11; 
+    let current = new Date(`${date}T${startHour.toString().padStart(2,'0')}:${startMinute.toString().padStart(2,'0')}:00`); 
+    const end = new Date(`${date}T${endHour.toString().padStart(2,'0')}:00:00`); 
+    
+    while (current < end) { 
+        const startTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}); 
+        current.setMinutes(current.getMinutes() + 30); 
+        const endTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}); 
+        slots.push({ date: date, start_time: startTime, end_time: endTime, max_capacity: 3, current_bookings: 0 }); 
+    } 
+    const { error } = await supabase.from('appointment_slots').insert(slots); 
+    if (error) throw new Error(error.message); 
+};
 export const addAppointmentSlot = async (slot: Omit<AppointmentSlot, 'id' | 'currentBookings'>) => { const { error } = await supabase.from('appointment_slots').insert({ date: slot.date, start_time: slot.startTime, end_time: slot.endTime, max_capacity: slot.maxCapacity }); if (error) throw new Error(error.message); };
 export const updateAppointmentSlot = async (slot: AppointmentSlot) => { const { error } = await supabase.from('appointment_slots').update({ start_time: slot.startTime, end_time: slot.endTime, max_capacity: slot.maxCapacity }).eq('id', slot.id); if (error) throw new Error(error.message); };
 export const deleteAppointmentSlot = async (id: string) => { const { error } = await supabase.from('appointment_slots').delete().eq('id', id); if (error) throw new Error(error.message); };

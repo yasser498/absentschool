@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Search, UploadCloud, AlertTriangle, Loader2, FileSpreadsheet, RefreshCw, CheckSquare, Square, X, AlertCircle, WifiOff } from 'lucide-react';
-import { getStudents, syncStudentsBatch, getStudentsSync, addStudent, deleteStudent } from '../../services/storage';
+import { Plus, Trash2, Search, UserCheck, School, X, CheckSquare, Square, Loader2, RefreshCw, Edit, Save, Smartphone, Hash, GraduationCap } from 'lucide-react';
+import { getStudents, syncStudentsBatch, getStudentsSync, addStudent, deleteStudent, updateStudent } from '../../services/storage';
 import { Student } from '../../types';
 import { GRADES, CLASSES } from '../../constants';
 
@@ -9,128 +9,129 @@ import { GRADES, CLASSES } from '../../constants';
 declare var XLSX: any;
 
 const Students: React.FC = () => {
-  // Instant Load: Initialize with cached data if available
   const [students, setStudents] = useState<Student[]>(() => getStudentsSync() || []);
-  
-  // Only show loading if we don't have data
   const [loading, setLoading] = useState(() => !getStudentsSync());
   const [error, setError] = useState<string | null>(null);
   
-  const [showAddModal, setShowAddModal] = useState(false);
+  // Modal States
+  const [showModal, setShowModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [currentStudentId, setCurrentStudentId] = useState<string | null>(null);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [processingFile, setProcessingFile] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   
-  // New Student Form State
-  const [newName, setNewName] = useState('');
-  const [newId, setNewId] = useState('');
-  const [newGrade, setNewGrade] = useState(GRADES[0]);
-  const [newClass, setNewClass] = useState(CLASSES[0]);
-  const [newPhone, setNewPhone] = useState('');
+  // Student Form State
+  const [formData, setFormData] = useState({
+      name: '',
+      studentId: '',
+      grade: GRADES[0],
+      className: CLASSES[0],
+      phone: ''
+  });
 
   const fetchStudents = async (force = false) => {
-    // If we are forcing refresh or have no initial data, show loading state
-    if (force || students.length === 0) {
-      setLoading(true);
-    }
+    if (force || students.length === 0) setLoading(true);
     setError(null);
-    
     try {
-        console.log("Fetching students...");
         const data = await getStudents(force);
         setStudents(data);
     } catch (e: any) {
-        console.error("Error fetching students in component:", e);
-        setError(e.message || "تعذر جلب البيانات. يرجى التحقق من الاتصال بالإنترنت.");
+        setError(e.message || "تعذر جلب البيانات.");
     } finally {
-        // Ensure loading is turned off regardless of success/failure
         setLoading(false);
     }
   };
 
-  useEffect(() => {
-    // Initial fetch
-    fetchStudents();
-  }, []);
+  useEffect(() => { fetchStudents(); }, []);
 
-  const handleRefresh = () => {
-    fetchStudents(true);
-  };
+  const handleRefresh = () => fetchStudents(true);
 
   const filteredStudents = useMemo(() => {
     return students.filter(s => 
-      s.name.includes(searchTerm) || s.studentId.includes(searchTerm)
+      s.name.includes(searchTerm) || s.studentId.includes(searchTerm) || s.phone.includes(searchTerm)
     );
   }, [students, searchTerm]);
 
-  // --- Bulk Selection Logic ---
-
+  // --- Bulk Selection ---
   const handleSelectAll = () => {
-    if (selectedIds.length === filteredStudents.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredStudents.map(s => s.id));
-    }
+    if (selectedIds.length === filteredStudents.length) setSelectedIds([]);
+    else setSelectedIds(filteredStudents.map(s => s.id));
   };
 
   const handleSelectOne = (id: string) => {
-    if (selectedIds.includes(id)) {
-      setSelectedIds(prev => prev.filter(item => item !== id));
-    } else {
-      setSelectedIds(prev => [...prev, id]);
-    }
+    if (selectedIds.includes(id)) setSelectedIds(prev => prev.filter(item => item !== id));
+    else setSelectedIds(prev => [...prev, id]);
   };
 
   const handleBulkDelete = async () => {
-    if (!window.confirm(`هل أنت متأكد من حذف ${selectedIds.length} طالب؟ لا يمكن التراجع عن هذا الإجراء.`)) {
-      return;
-    }
-
+    if (!window.confirm(`هل أنت متأكد من حذف ${selectedIds.length} طالب؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
     setIsBulkDeleting(true);
     const previousStudents = [...students];
-    
-    // Optimistic Update
     setStudents(prev => prev.filter(s => !selectedIds.includes(s.id)));
-
     try {
-      // Pass empty add/update arrays, only IDs to delete
       await syncStudentsBatch([], [], selectedIds);
       setSelectedIds([]);
     } catch (error) {
       alert("حدث خطأ أثناء الحذف الجماعي.");
-      setStudents(previousStudents); // Revert
+      setStudents(previousStudents);
     } finally {
       setIsBulkDeleting(false);
     }
   };
 
-  // --- Single Add/Delete Logic ---
+  // --- Add / Edit Logic ---
+  const openAddModal = () => {
+      setIsEditing(false);
+      setFormData({ name: '', studentId: '', grade: GRADES[0], className: CLASSES[0], phone: '' });
+      setShowModal(true);
+  };
 
-  const handleAddStudent = async (e: React.FormEvent) => {
+  const openEditModal = (student: Student) => {
+      setIsEditing(true);
+      setCurrentStudentId(student.id);
+      setFormData({
+          name: student.name,
+          studentId: student.studentId,
+          grade: student.grade,
+          className: student.className,
+          phone: student.phone
+      });
+      setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (students.some(s => s.studentId === newId)) {
+    
+    // Validation
+    if (!isEditing && students.some(s => s.studentId === formData.studentId)) {
         alert("رقم الهوية مسجل مسبقاً لطالب آخر.");
         return;
     }
-    
-    const newStudent: Student = {
-      id: '', // Generated by DB
-      name: newName,
-      studentId: newId,
-      grade: newGrade,
-      className: newClass,
-      phone: newPhone
-    };
 
     setLoading(true); 
     try {
-      const addedStudent = await addStudent(newStudent);
-      setStudents(prev => [...prev, addedStudent]);
-      setShowAddModal(false);
-      setNewName(''); setNewId(''); setNewPhone('');
+      const studentPayload: Student = {
+          id: currentStudentId || '', // ID ignored on insert, used on update logic if needed
+          ...formData
+      };
+
+      if (isEditing) {
+          // Update Logic
+          await updateStudent(studentPayload);
+          setStudents(prev => prev.map(s => s.id === currentStudentId ? { ...s, ...formData } : s));
+          alert("تم تعديل بيانات الطالب بنجاح");
+      } else {
+          // Add Logic
+          const addedStudent = await addStudent(studentPayload);
+          setStudents(prev => [...prev, addedStudent]);
+          alert("تم إضافة الطالب بنجاح");
+      }
+      setShowModal(false);
     } catch (error) {
-      alert("حدث خطأ أثناء الإضافة.");
+      alert("حدث خطأ أثناء الحفظ.");
     } finally {
       setLoading(false);
     }
@@ -149,8 +150,7 @@ const Students: React.FC = () => {
     }
   };
 
-  // --- File Upload Logic ---
-
+  // --- Excel Logic ---
   const mapCodeToGrade = (code: string | number): string => {
     const c = code ? code.toString().trim() : '';
     if (c === '725' || c === '0725') return 'الأول متوسط';
@@ -163,324 +163,213 @@ const Students: React.FC = () => {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (typeof XLSX === 'undefined') {
-        alert("مكتبة معالجة الملفات (SheetJS) غير محملة. يرجى تحديث الصفحة.");
-        return;
-    }
+    if (typeof XLSX === 'undefined') { alert("مكتبة Excel غير محملة."); return; }
 
     setProcessingFile(true);
-    
     try {
-        const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
-             const reader = new FileReader();
-             reader.onload = (evt) => {
-                 if (evt.target?.result) resolve(evt.target.result as ArrayBuffer);
-                 else reject(new Error("Empty file"));
-             };
-             reader.onerror = (err) => reject(err);
-             reader.readAsArrayBuffer(file);
-        });
-
+        const arrayBuffer = await file.arrayBuffer();
         const wb = XLSX.read(arrayBuffer, { type: 'array' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         
-        if (data.length === 0) {
-            alert("الملف فارغ!");
-            return;
-        }
-
-        // Validate Headers
-        const firstRow = data[0] as object;
-        const keys = Object.keys(firstRow);
-        const hasName = keys.some(k => ['الاسم', 'name', 'Name'].includes(k));
-        const hasId = keys.some(k => ['السجل المدني', 'الهوية', 'studentId', 'ID'].includes(k));
-        
-        if (!hasName || !hasId) {
-            alert("صيغة الملف غير صحيحة. يجب أن يحتوي الملف على الأعمدة التالية: 'الاسم'، 'السجل المدني' (أو الهوية).");
-            return;
-        }
+        if (data.length === 0) { alert("الملف فارغ!"); return; }
 
         const toUpsert: Student[] = [];
-        const errors: string[] = [];
-
-        data.forEach((row: any, index: number) => {
+        data.forEach((row: any) => {
             const name = row['الاسم'] || row['name'] || row['Name'];
             const studentIdRaw = row['السجل المدني'] || row['الهوية'] || row['studentId'] || row['ID'];
             const gradeRaw = row['الصف'] || row['grade'] || row['Grade'];
             const classRaw = row['الفصل'] || row['className'] || row['Class'];
-            const phone = row['الجوال'] || row['رقم الجوال'] || row['phone'] || row['Phone'] || '';
+            const phone = row['الجوال'] || row['رقم الجوال'] || row['phone'] || '';
 
             if (name && studentIdRaw) {
-                const studentId = studentIdRaw.toString().trim();
-                const grade = mapCodeToGrade(gradeRaw) || GRADES[0]; 
-                const className = classRaw ? classRaw.toString().trim() : CLASSES[0];
-
-                const studentObj: Student = {
-                    id: '', // Not needed for Upsert if using student_id as key
+                toUpsert.push({
+                    id: '',
                     name: name.toString().trim(),
-                    studentId: studentId,
-                    grade: grade,
-                    className: className,
+                    studentId: studentIdRaw.toString().trim(),
+                    grade: mapCodeToGrade(gradeRaw) || GRADES[0],
+                    className: classRaw ? classRaw.toString().trim() : CLASSES[0],
                     phone: phone.toString().trim()
-                };
-                toUpsert.push(studentObj);
-            } else {
-                if (!name && !studentIdRaw) return; 
-                errors.push(`صف رقم ${index + 2}: بيانات ناقصة (الاسم أو الهوية)`);
+                });
             }
         });
 
-        if (toUpsert.length === 0) {
-            alert("لم يتم العثور على أي طلاب صالحين للإضافة.");
-            return;
-        }
-
-        const confirmMsg = `سيتم معالجة ${toUpsert.length} طالب.\nسيتم إضافة الطلاب الجدد وتحديث بيانات الطلاب الموجودين مسبقاً.\n\nهل تريد المتابعة؟`;
+        if (toUpsert.length === 0) { alert("لا توجد بيانات صالحة."); return; }
         
-        if (window.confirm(confirmMsg)) {
-            // Pass toAdd as the whole list (syncStudentsBatch will handle Upsert)
+        if (window.confirm(`سيتم معالجة ${toUpsert.length} طالب. متابعة؟`)) {
             await syncStudentsBatch(toUpsert, [], []); 
             await fetchStudents(true); 
             alert("تمت العملية بنجاح!");
         }
-
-    } catch (error: any) {
-        console.error(error);
-        alert(`حدث خطأ: ${error.message}`);
-    } finally {
-        setProcessingFile(false);
-        e.target.value = ''; // Reset input
-    }
+    } catch (error: any) { alert(`خطأ: ${error.message}`); } finally { setProcessingFile(false); e.target.value = ''; }
   };
 
-  const inputClasses = "w-full p-2.5 bg-white border border-slate-300 text-slate-900 rounded-lg focus:ring-2 focus:ring-blue-900 focus:border-blue-900 outline-none transition-all";
-  const labelClasses = "block text-sm font-semibold text-slate-700 mb-1.5";
+  const inputClasses = "w-full p-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-blue-900 outline-none transition-all font-bold text-sm";
+  const labelClasses = "block text-xs font-bold text-slate-500 uppercase mb-1.5";
 
   return (
-    <div className="space-y-6 animate-fade-in relative">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+    <div className="space-y-6 animate-fade-in relative pb-20">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
         <div>
-            <h1 className="text-2xl font-bold text-blue-900">إدارة الطلاب</h1>
-            <p className="text-slate-500 text-sm mt-1">رفع وإدارة بيانات الطلاب (Supabase Cloud)</p>
+            <h1 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
+                <UserCheck className="text-emerald-500"/> إدارة الطلاب
+            </h1>
+            <p className="text-slate-500 text-sm mt-1">قاعدة بيانات الطلاب (إضافة، تعديل، حذف، استيراد)</p>
         </div>
-        <div className="flex gap-2">
-           <button 
-             onClick={handleRefresh}
-             className="flex items-center gap-2 bg-slate-100 text-slate-600 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors font-medium"
-             title="تحديث البيانات من السيرفر"
-           >
-             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-           </button>
-           <button 
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 bg-blue-900 text-white px-4 py-2 rounded-lg hover:bg-blue-800 transition-colors font-medium shadow-sm hover:shadow"
-           >
-             <Plus size={18} /> إضافة يدوي
-           </button>
+        <div className="flex flex-wrap gap-2 justify-center">
+           <button onClick={handleRefresh} className="bg-slate-100 text-slate-600 p-2.5 rounded-xl hover:bg-slate-200" title="تحديث"><RefreshCw size={20} className={loading ? 'animate-spin' : ''} /></button>
+           <button onClick={openAddModal} className="bg-blue-900 text-white px-5 py-2.5 rounded-xl hover:bg-blue-800 font-bold text-sm flex items-center gap-2 shadow-lg shadow-blue-900/20"><Plus size={18} /> إضافة طالب</button>
            
            <div className="relative">
-             <input 
-                type="file" 
-                accept=".xlsx, .xls"
-                onChange={handleFileUpload}
-                className="hidden"
-                id="excel-upload"
-                disabled={processingFile}
-             />
-             <label 
-                htmlFor="excel-upload"
-                className={`flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-sm hover:shadow cursor-pointer ${processingFile ? 'opacity-50 cursor-wait' : ''}`}
-             >
-                {processingFile ? <Loader2 className="animate-spin" size={18} /> : <FileSpreadsheet size={18} />}
-                <span>{processingFile ? 'جاري المعالجة...' : 'رفع ملف Excel'}</span>
+             <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="hidden" id="excel-upload" disabled={processingFile} />
+             <label htmlFor="excel-upload" className={`flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl hover:bg-emerald-700 font-bold text-sm shadow-lg shadow-emerald-600/20 cursor-pointer ${processingFile ? 'opacity-50' : ''}`}>
+                {processingFile ? <Loader2 className="animate-spin" size={18} /> : <div className="flex items-center gap-2"><div className="bg-white/20 p-1 rounded"><Plus size={12}/></div> استيراد Excel</div>}
              </label>
            </div>
         </div>
       </div>
 
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-        <div className="relative max-w-md w-full">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="بحث بالاسم أو رقم الهوية..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pr-10 pl-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-900 outline-none text-slate-900"
-          />
-        </div>
+      {/* Search & Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="md:col-span-2 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm relative">
+              <Search className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <input 
+                type="text" 
+                placeholder="بحث بالاسم، الهوية، أو الجوال..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pr-12 pl-4 py-3 bg-slate-50 border-none rounded-xl outline-none focus:ring-2 focus:ring-blue-100 font-bold text-slate-700"
+              />
+          </div>
+          <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                  <p className="text-xs font-bold text-blue-400 uppercase">إجمالي الطلاب</p>
+                  <p className="text-2xl font-extrabold text-blue-900">{students.length}</p>
+              </div>
+              <div className="bg-white p-3 rounded-xl text-blue-600 shadow-sm"><UserCheck size={24}/></div>
+          </div>
       </div>
 
       {/* Bulk Action Bar */}
       {selectedIds.length > 0 && (
-        <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex justify-between items-center animate-fade-in shadow-sm">
-           <div className="flex items-center gap-3 text-red-800 font-bold">
-              <CheckSquare size={20} />
-              <span>تم تحديد {selectedIds.length} طالب</span>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 bg-slate-900 text-white p-4 rounded-2xl shadow-2xl flex items-center gap-6 animate-fade-in-up border border-slate-700">
+           <div className="flex items-center gap-2 font-bold text-sm">
+              <div className="bg-white text-slate-900 w-6 h-6 flex items-center justify-center rounded-full text-xs">{selectedIds.length}</div>
+              <span>طالب محدد</span>
            </div>
-           <div className="flex gap-3">
-              <button 
-                onClick={() => setSelectedIds([])}
-                className="px-4 py-2 rounded-lg bg-white border border-red-100 text-red-600 hover:bg-red-100 text-sm font-bold"
-              >
-                إلغاء التحديد
-              </button>
-              <button 
-                onClick={handleBulkDelete}
-                disabled={isBulkDeleting}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-bold shadow-sm flex items-center gap-2"
-              >
-                {isBulkDeleting ? <Loader2 className="animate-spin" size={16}/> : <Trash2 size={16} />}
-                حذف المحدد
-              </button>
-           </div>
-        </div>
-      )}
-
-      {/* Error Banner */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 p-4 rounded-xl flex items-center gap-3 text-red-800 mb-4">
-            <WifiOff size={24} />
-            <div>
-                <p className="font-bold">فشل الاتصال!</p>
-                <p className="text-sm">{error}</p>
-                <button onClick={handleRefresh} className="mt-2 text-sm underline font-bold hover:text-red-950">حاول مرة أخرى</button>
-            </div>
+           <div className="h-6 w-px bg-slate-700"></div>
+           <button onClick={() => setSelectedIds([])} className="text-slate-400 hover:text-white text-sm font-bold">إلغاء</button>
+           <button onClick={handleBulkDelete} disabled={isBulkDeleting} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2">
+             {isBulkDeleting ? <Loader2 className="animate-spin" size={16}/> : <Trash2 size={16} />} حذف المحدد
+           </button>
         </div>
       )}
 
       {/* Table Container */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden h-[600px] flex flex-col">
-        {/* Table Header - Static Flex Div */}
-        <div className="flex bg-slate-50 text-slate-700 text-sm font-bold border-b border-slate-200 pr-2 pl-4 py-4 uppercase tracking-wider">
-            <div className="w-[5%] text-center">
-                <button onClick={handleSelectAll} className="text-slate-500 hover:text-blue-900 transition-colors">
-                    {selectedIds.length > 0 && selectedIds.length === filteredStudents.length 
-                    ? <CheckSquare size={18} /> 
-                    : <Square size={18} />}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden min-h-[500px] flex flex-col">
+        {/* Table Header */}
+        <div className="flex bg-slate-50/50 text-slate-500 text-xs font-bold border-b border-slate-100 py-4 px-4 uppercase tracking-wider">
+            <div className="w-12 text-center flex justify-center">
+                <button onClick={handleSelectAll} className="hover:text-blue-600">
+                    {selectedIds.length > 0 && selectedIds.length === filteredStudents.length ? <CheckSquare size={20} className="text-blue-600"/> : <Square size={20}/>}
                 </button>
             </div>
-            <div className="w-[25%] px-2">الاسم</div>
-            <div className="w-[15%] px-2">الهوية</div>
-            <div className="w-[15%] px-2">الصف</div>
-            <div className="w-[10%] px-2">الفصل</div>
-            <div className="w-[20%] px-2">الجوال</div>
-            <div className="w-[10%] text-center">إجراء</div>
+            <div className="w-[30%]">بيانات الطالب</div>
+            <div className="w-[20%]">الصف والفصل</div>
+            <div className="w-[20%]">بيانات الاتصال</div>
+            <div className="w-[15%] text-center">رقم الهوية</div>
+            <div className="flex-1 text-center">إجراءات</div>
         </div>
 
         {loading ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
-                <Loader2 className="animate-spin mx-auto mb-2" size={32} />
-                <p>جاري تحميل بيانات الطلاب...</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+                <Loader2 className="animate-spin mb-4" size={40} />
+                <p className="font-bold">جاري تحميل قاعدة البيانات...</p>
             </div>
-        ) : filteredStudents.length === 0 && !error ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-12">
-                <AlertTriangle size={48} className="mx-auto mb-2 opacity-50" />
-                <p>لا توجد بيانات طلاب. قم بإضافة طلاب أو رفع ملف Excel.</p>
+        ) : filteredStudents.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-12">
+                <div className="bg-slate-50 p-6 rounded-full mb-4"><UserCheck size={48} className="opacity-20" /></div>
+                <p className="font-bold">لا توجد بيانات مطابقة</p>
+                <p className="text-sm mt-1">قم بإضافة طلاب أو استيراد ملف Excel</p>
             </div>
-        ) : !error ? (
-            // Standard List (No react-window)
-            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+        ) : (
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200">
                  {filteredStudents.map((s) => {
                     const isSelected = selectedIds.includes(s.id);
                     return (
-                      <div 
-                        key={s.id}
-                        className={`flex items-center border-b border-slate-50 hover:bg-slate-50 transition-colors px-2 text-sm h-[60px] ${isSelected ? 'bg-blue-50/50' : ''}`}
-                      >
-                        {/* Checkbox (5%) */}
-                        <div className="w-[5%] flex justify-center">
-                            <button 
-                                onClick={() => handleSelectOne(s.id)} 
-                                className={`${isSelected ? 'text-blue-900' : 'text-slate-300 hover:text-slate-400'}`}
-                            >
-                                {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                      <div key={s.id} className={`flex items-center border-b border-slate-50 hover:bg-blue-50/30 transition-colors py-3 px-4 text-sm group ${isSelected ? 'bg-blue-50/60' : ''}`}>
+                        <div className="w-12 flex justify-center">
+                            <button onClick={() => handleSelectOne(s.id)} className={`transition-colors ${isSelected ? 'text-blue-600' : 'text-slate-300 hover:text-slate-500'}`}>
+                                {isSelected ? <CheckSquare size={20} /> : <Square size={20} />}
                             </button>
                         </div>
-
-                        {/* Name (25%) */}
-                        <div className="w-[25%] p-2 font-bold text-slate-900 truncate">
+                        <div className="w-[30%] font-bold text-slate-800 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold text-xs border border-slate-200">{s.name.charAt(0)}</div>
                             {s.name}
                         </div>
-
-                        {/* ID (15%) */}
-                        <div className="w-[15%] p-2 font-mono text-slate-600 truncate">
-                            {s.studentId}
+                        <div className="w-[20%] text-slate-600 flex items-center gap-2">
+                            <span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{s.grade}</span>
+                            <span className="text-slate-400">/</span>
+                            <span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{s.className}</span>
                         </div>
-
-                        {/* Grade (15%) */}
-                        <div className="w-[15%] p-2 text-slate-700 truncate">
-                            {s.grade}
+                        <div className="w-[20%] font-mono text-slate-600 dir-ltr text-right flex items-center gap-2">
+                            <Smartphone size={14} className="text-slate-400"/> {s.phone || '-'}
                         </div>
-
-                        {/* Class (10%) */}
-                        <div className="w-[10%] p-2 text-slate-700 truncate">
-                            {s.className}
-                        </div>
-
-                        {/* Phone (20%) */}
-                        <div className="w-[20%] p-2 text-slate-700 dir-ltr text-right truncate">
-                            {s.phone}
-                        </div>
-
-                        {/* Action (10%) */}
-                        <div className="w-[10%] p-2 flex justify-center">
-                            <button onClick={() => handleDelete(s.id)} className="text-red-400 hover:text-red-600 p-1.5 hover:bg-red-50 rounded-lg transition-colors">
-                                <Trash2 size={16}/>
-                            </button>
+                        <div className="w-[15%] text-center font-mono text-slate-500 bg-slate-50 rounded px-2 py-1 text-xs">{s.studentId}</div>
+                        <div className="flex-1 flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => openEditModal(s)} className="p-2 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"><Edit size={16}/></button>
+                            <button onClick={() => handleDelete(s.id)} className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"><Trash2 size={16}/></button>
                         </div>
                       </div>
                     );
                  })}
             </div>
-        ) : (
-            <div className="flex-1 bg-slate-50"></div>
         )}
       </div>
 
-      {/* Add Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-fade-in-up border border-slate-100">
-              <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
-                 <h2 className="text-xl font-bold text-slate-800">إضافة طالب جديد</h2>
-                 <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+      {/* ADD / EDIT MODAL */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in">
+           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+                 <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    <div className="bg-blue-50 p-2 rounded-xl text-blue-600">{isEditing ? <Edit size={20}/> : <Plus size={20}/>}</div>
+                    {isEditing ? 'تعديل بيانات الطالب' : 'إضافة طالب جديد'}
+                 </h2>
+                 <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-red-500 bg-slate-50 hover:bg-red-50 p-2 rounded-full transition-colors"><X size={20}/></button>
               </div>
               
-              <form onSubmit={handleAddStudent} className="space-y-4">
+              <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
                  <div>
                    <label className={labelClasses}>الاسم الثلاثي</label>
-                   <input required value={newName} onChange={e => setNewName(e.target.value)} className={inputClasses} placeholder="مثال: أحمد محمد علي" />
+                   <div className="relative"><input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputClasses} placeholder="أدخل اسم الطالب..." /><UserCheck className="absolute left-4 top-3 text-slate-400" size={18}/></div>
                  </div>
                  <div>
                    <label className={labelClasses}>رقم الهوية / السجل</label>
-                   <input required value={newId} onChange={e => setNewId(e.target.value)} className={inputClasses} placeholder="1xxxxxxxxx" />
+                   <div className="relative"><input required value={formData.studentId} onChange={e => setFormData({...formData, studentId: e.target.value})} className={inputClasses} placeholder="1xxxxxxxxx" /><Hash className="absolute left-4 top-3 text-slate-400" size={18}/></div>
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                       <label className={labelClasses}>الصف</label>
-                       <select value={newGrade} onChange={e => setNewGrade(e.target.value)} className={inputClasses}>
+                       <label className={labelClasses}>الصف الدراسي</label>
+                       <select value={formData.grade} onChange={e => setFormData({...formData, grade: e.target.value})} className={inputClasses}>
                           {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
                        </select>
                     </div>
                     <div>
-                       <label className={labelClasses}>الفصل</label>
-                       <select value={newClass} onChange={e => setNewClass(e.target.value)} className={inputClasses}>
+                       <label className={labelClasses}>الفصل (الشعبة)</label>
+                       <select value={formData.className} onChange={e => setFormData({...formData, className: e.target.value})} className={inputClasses}>
                           {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                        </select>
                     </div>
                  </div>
                  <div>
-                   <label className={labelClasses}>رقم الجوال</label>
-                   <input required value={newPhone} onChange={e => setNewPhone(e.target.value)} className={inputClasses} placeholder="05xxxxxxxx" />
+                   <label className={labelClasses}>رقم جوال ولي الأمر</label>
+                   <div className="relative"><input required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className={inputClasses} placeholder="05xxxxxxxx" /><Smartphone className="absolute left-4 top-3 text-slate-400" size={18}/></div>
                  </div>
-                 <div className="flex gap-3 pt-4">
-                   <button type="submit" className="flex-1 bg-blue-900 text-white py-2.5 rounded-lg hover:bg-blue-800 font-bold transition-colors shadow-lg shadow-blue-900/20">حفظ البيانات</button>
-                   <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 bg-slate-100 text-slate-700 py-2.5 rounded-lg hover:bg-slate-200 font-bold transition-colors">إلغاء</button>
-                 </div>
+
+                 <button type="submit" className="w-full bg-blue-900 text-white py-4 rounded-xl font-bold hover:bg-blue-800 transition-all shadow-lg flex items-center justify-center gap-2 mt-4">
+                   <Save size={20} /> {isEditing ? 'حفظ التعديلات' : 'إضافة الطالب'}
+                 </button>
               </form>
            </div>
         </div>

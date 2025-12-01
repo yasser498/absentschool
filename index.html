@@ -59,7 +59,8 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/service-worker.js')
+          // Use relative path './' instead of absolute '/' to prevent origin mismatch errors in preview environments
+          navigator.serviceWorker.register('./service-worker.js')
             .then(registration => {
               console.log('SW registered: ', registration);
             })

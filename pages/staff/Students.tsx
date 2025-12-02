@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { Search, Phone, MessageCircle, X, Loader2, BookUser, Copy, Check, School, Smartphone, Inbox, LayoutGrid, HeartHandshake, UserPlus, Users, ArrowRight, ClipboardList, Send, FileText, Printer, Calendar, Plus, ShieldAlert, FileWarning, Eye, TrendingDown, Clock, AlertCircle, CheckCircle, ArrowLeft, RefreshCw, Activity, GitCommit, UserCheck, Sparkles, Archive, Wand2, Edit, Trash2 } from 'lucide-react';
-import { getStudents, getStudentAttendanceHistory, getReferrals, updateReferralStatus, addGuidanceSession, getGuidanceSessions, getBehaviorRecords, getStudentObservations, getConsecutiveAbsences, generateGuidancePlan, generateSmartContent, updateGuidanceSession, deleteGuidanceSession } from '../../services/storage';
-import { Student, StaffUser, AttendanceStatus, Referral, GuidanceSession, BehaviorRecord, StudentObservation } from '../../types';
+import { Search, Phone, MessageCircle, X, Loader2, BookUser, Copy, Check, School, Smartphone, Inbox, LayoutGrid, HeartHandshake, UserPlus, Users, ArrowRight, ClipboardList, Send, FileText, Printer, Calendar, Plus, ShieldAlert, FileWarning, Eye, TrendingDown, Clock, AlertCircle, CheckCircle, ArrowLeft, RefreshCw, Activity, GitCommit, UserCheck, Sparkles, Archive, Wand2, Edit, Trash2, ListChecks, FileX } from 'lucide-react';
+import { getStudents, getStudentAttendanceHistory, getReferrals, updateReferralStatus, addGuidanceSession, getGuidanceSessions, getBehaviorRecords, getStudentObservations, getConsecutiveAbsences, generateGuidancePlan, generateSmartContent, updateGuidanceSession, deleteGuidanceSession, resolveAbsenceAlert, getRequests } from '../../services/storage';
+import { Student, StaffUser, AttendanceStatus, Referral, GuidanceSession, BehaviorRecord, StudentObservation, ExcuseRequest } from '../../types';
 import { GRADES } from '../../constants';
 
 const { useNavigate, useLocation } = ReactRouterDOM as any;
@@ -39,7 +39,7 @@ const StaffStudents: React.FC = () => {
   const isDirectoryMode = location.pathname === '/staff/directory';
 
   // View State
-  const [activeView, setActiveView] = useState<'dashboard' | 'directory' | 'inbox' | 'sessions' | 'archive'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'directory' | 'inbox' | 'sessions' | 'archive' | 'risk_followup'>('dashboard');
 
   // Force Directory View if in Directory Mode
   useEffect(() => {
@@ -52,6 +52,10 @@ const StaffStudents: React.FC = () => {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [sessions, setSessions] = useState<GuidanceSession[]>([]);
   const [riskList, setRiskList] = useState<any[]>([]);
+  const [requests, setRequests] = useState<ExcuseRequest[]>([]);
+  
+  // Workflow State for Risk
+  const [movedToFollowUp, setMovedToFollowUp] = useState<string[]>([]); // IDs of students moved to follow-up locally
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -85,8 +89,9 @@ const StaffStudents: React.FC = () => {
 
   // Printing
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
-  const [printMode, setPrintMode] = useState<'none' | 'daily' | 'single_session'>('none');
+  const [printMode, setPrintMode] = useState<'none' | 'daily' | 'single_session' | 'absence_warning'>('none');
   const [sessionToPrint, setSessionToPrint] = useState<GuidanceSession | null>(null);
+  const [riskStudentToPrint, setRiskStudentToPrint] = useState<{name: string, grade: string, days: number} | null>(null);
 
   useEffect(() => {
     const session = localStorage.getItem('ozr_staff_session');
@@ -96,16 +101,18 @@ const StaffStudents: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-        const [s, r, g, risks] = await Promise.all([
+        const [s, r, g, risks, reqs] = await Promise.all([
             getStudents(),
             getReferrals(),
             getGuidanceSessions(),
-            !isDirectoryMode ? getConsecutiveAbsences() : Promise.resolve([])
+            !isDirectoryMode ? getConsecutiveAbsences() : Promise.resolve([]),
+            getRequests()
         ]);
         setStudents(s);
         setReferrals(r);
         setSessions(g);
         setRiskList(risks);
+        setRequests(reqs);
     } catch (e) {
         console.error(e);
     } finally {
@@ -138,6 +145,26 @@ const StaffStudents: React.FC = () => {
   const activeReferrals = useMemo(() => referrals.filter(r => r.status === 'in_progress'), [referrals]);
   // Resolved includes both 'resolved' by deputy AND 'returned_to_deputy' (completed by counselor)
   const completedReferrals = useMemo(() => referrals.filter(r => (r.status === 'resolved' || r.status === 'returned_to_deputy')), [referrals]);
+
+  // Risk Lists logic
+  const activeRiskList = useMemo(() => {
+      return riskList.filter(r => {
+          // 1. Exclude if moved to follow-up locally
+          if (movedToFollowUp.includes(r.studentId)) return false;
+          
+          // 2. Exclude if student has a valid excuse (PENDING or APPROVED) for the risk date
+          // The riskList provides 'lastDate' which is the most recent absent day triggering the risk.
+          const hasExcuse = requests.some(req => 
+              req.studentId === r.studentId && 
+              req.date === r.lastDate && 
+              req.status !== 'REJECTED'
+          );
+          
+          return !hasExcuse;
+      });
+  }, [riskList, movedToFollowUp, requests]);
+
+  const followUpRiskList = useMemo(() => riskList.filter(r => movedToFollowUp.includes(r.studentId)), [riskList, movedToFollowUp]);
 
   // Reporting Logic
   const dailySessions = useMemo(() => sessions.filter(s => s.date === reportDate), [sessions, reportDate]);
@@ -263,6 +290,34 @@ const StaffStudents: React.FC = () => {
       } catch (e) { alert("خطأ في الحذف"); }
   };
 
+  // --- RISK & FOLLOW-UP ACTIONS ---
+  const handlePrintWarning = (risk: any) => {
+      setRiskStudentToPrint({
+          name: risk.studentName,
+          grade: 'طالب', // Simplified since grade isn't always in risk object immediately without lookup
+          days: risk.days
+      });
+      setPrintMode('absence_warning');
+      setTimeout(() => { 
+          window.print(); 
+          setPrintMode('none'); 
+          // Move to Follow-up local list
+          setMovedToFollowUp(prev => [...prev, risk.studentId]);
+      }, 300);
+  };
+
+  const handleExcludeRisk = async (studentId: string) => {
+      if(!window.confirm("هل أنت متأكد من استبعاد الطالب من قائمة الخطر؟ (يعتبر الإجراء منتهياً)")) return;
+      try {
+          await resolveAbsenceAlert(studentId, 'resolved');
+          // Remove from local follow up if exists
+          setMovedToFollowUp(prev => prev.filter(id => id !== studentId));
+          // Refresh main list
+          fetchData();
+          alert("تم استبعاد الطالب من المؤشر بنجاح.");
+      } catch(e) { alert("حدث خطأ"); }
+  };
+
   const copyToClipboard = (text: string) => { navigator.clipboard.writeText(text); alert('تم النسخ'); };
   const handlePrintDailyReport = () => { setPrintMode('daily'); setTimeout(() => { window.print(); setPrintMode('none'); }, 300); };
   
@@ -299,7 +354,35 @@ const StaffStudents: React.FC = () => {
 
     {/* PRINTABLE AREA (Dynamic Content based on Active View) */}
     <div className="printable-area hidden" dir="rtl">
-        {/* ... (Print Templates Unchanged) ... */}
+        {printMode === 'absence_warning' && riskStudentToPrint && (
+            <>
+                <OfficialCounselorHeader title="إنذار غياب طالب" date={new Date().toLocaleDateString('ar-SA')} />
+                <div className="px-8 mt-10">
+                    <p className="text-xl mb-6">المكرم ولي أمر الطالب / <strong>{riskStudentToPrint.name}</strong> .. وفقه الله</p>
+                    <p className="text-lg leading-loose mb-6 text-justify">
+                        السلام عليكم ورحمة الله وبركاته،،<br/>
+                        نحيطكم علماً بأن ابنكم قد تكرر غيابه عن المدرسة حيث بلغ عدد أيام غيابه (<strong>{riskStudentToPrint.days}</strong>) أيام حتى تاريخه دون عذر مقبول.
+                    </p>
+                    <p className="text-lg leading-loose mb-8 text-justify">
+                        وحيث أن هذا الغياب يؤثر سلباً على مستواه الدراسي وسلوكه، نأمل منكم الحضور للمدرسة لمناقشة أسباب الغياب والتعاون معنا في معالجتها، وتبرير الغياب السابق تفادياً لتطبيق لائحة المواظبة والخصم من الدرجات.
+                    </p>
+                    <p className="text-lg font-bold">شاكرين لكم حسن تعاونكم واهتمامكم.</p>
+                </div>
+                <div className="mt-20 flex justify-between px-10">
+                    <div className="text-center"><p className="font-bold mb-8">الموجه الطلابي</p><p>{currentUser.name}</p></div>
+                    <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
+                </div>
+                <div className="mt-16 border-t-2 border-dashed border-gray-400 pt-8">
+                    <p className="text-center font-bold mb-4">-- قصاصة الإعادة --</p>
+                    <p className="text-right">أقر أنا ولي أمر الطالب / .................................................... باستلامي إنذار الغياب وتعهدي بمتابعة ابني.</p>
+                    <div className="mt-4 flex justify-end gap-8">
+                        <p>التوقيع: ....................</p>
+                        <p>التاريخ: ....................</p>
+                    </div>
+                </div>
+            </>
+        )}
+
         {printMode === 'daily' && activeView === 'sessions' && (
             <>
                 <OfficialCounselorHeader title="تقرير الجلسات الإرشادية اليومي" date={reportDate} />
@@ -421,6 +504,7 @@ const StaffStudents: React.FC = () => {
                  {[
                      { id: 'dashboard', label: 'الرئيسية', icon: LayoutGrid },
                      { id: 'inbox', label: 'الإحالات', icon: Inbox, count: pendingReferrals.length },
+                     { id: 'risk_followup', label: 'المتابعة', icon: ListChecks, count: followUpRiskList.length },
                      { id: 'archive', label: 'السجل', icon: Archive },
                      { id: 'sessions', label: 'الجلسات', icon: ClipboardList },
                      { id: 'directory', label: 'الدليل', icon: BookUser },
@@ -435,9 +519,8 @@ const StaffStudents: React.FC = () => {
          )}
       </div>
 
-      {/* DASHBOARD VIEW (Unchanged) */}
+      {/* DASHBOARD VIEW */}
       {!isDirectoryMode && activeView === 'dashboard' && (
-          // ... (Dashboard code remains as is)
           <div className="space-y-6 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                   <div className="bg-white p-5 rounded-3xl border border-purple-100 shadow-sm text-center">
@@ -459,20 +542,25 @@ const StaffStudents: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Risk List */}
+                  {/* Risk List (New Cases) */}
                   <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[400px]">
                       <div className="bg-red-50 px-6 py-4 border-b border-red-100 flex justify-between items-center">
-                          <h3 className="font-bold text-red-800 flex items-center gap-2"><ShieldAlert size={18}/> مؤشر الخطر (الغياب)</h3>
-                          <span className="bg-white text-red-600 px-3 py-1 rounded-full text-xs font-bold">{riskList.length}</span>
+                          <h3 className="font-bold text-red-800 flex items-center gap-2"><ShieldAlert size={18}/> مؤشر الخطر (حالات جديدة)</h3>
+                          <span className="bg-white text-red-600 px-3 py-1 rounded-full text-xs font-bold">{activeRiskList.length}</span>
                       </div>
                       <div className="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-3">
-                          {riskList.length === 0 ? <p className="text-center py-10 text-slate-400">لا يوجد طلاب في دائرة الخطر.</p> : riskList.map((risk, idx) => (
+                          {activeRiskList.length === 0 ? <p className="text-center py-10 text-slate-400">لا يوجد طلاب جدد في دائرة الخطر (مع استبعاد من لديهم أعذار).</p> : activeRiskList.map((risk, idx) => (
                               <div key={idx} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-xl hover:border-red-200">
                                   <div className="flex items-center gap-3">
                                       <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold">{risk.studentName.charAt(0)}</div>
                                       <div><h4 className="font-bold text-sm text-slate-800">{risk.studentName}</h4><p className="text-xs text-slate-500">آخر غياب: {risk.lastDate}</p></div>
                                   </div>
-                                  <div className="text-right"><span className="block text-red-600 font-extrabold">{risk.days} أيام</span></div>
+                                  <div className="flex items-center gap-3">
+                                      <span className="text-red-600 font-extrabold">{risk.days} أيام</span>
+                                      <button onClick={() => handlePrintWarning(risk)} className="text-xs bg-red-600 text-white px-3 py-2 rounded-lg font-bold hover:bg-red-700 flex items-center gap-1 shadow-sm">
+                                          <Printer size={14}/> إنذار
+                                      </button>
+                                  </div>
                               </div>
                           ))}
                       </div>
@@ -505,9 +593,48 @@ const StaffStudents: React.FC = () => {
           </div>
       )}
 
+      {/* VIEW: RISK FOLLOW UP */}
+      {!isDirectoryMode && activeView === 'risk_followup' && (
+          <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
+              <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><ListChecks className="text-orange-600"/> متابعة حالات الغياب (بعد الإنذار)</h2>
+                  <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-xs font-bold">{followUpRiskList.length} طالب</span>
+              </div>
+
+              {followUpRiskList.length === 0 ? (
+                  <div className="text-center py-20 bg-white rounded-2xl border border-slate-200"><CheckCircle className="mx-auto mb-4 text-emerald-300" size={48}/><p className="text-slate-500">لا توجد حالات قيد المتابعة حالياً.</p></div>
+              ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {followUpRiskList.map((risk, idx) => (
+                          <div key={idx} className="bg-white p-5 rounded-2xl border border-orange-200 shadow-sm flex flex-col justify-between hover:shadow-md transition-all relative overflow-hidden">
+                              <div className="absolute top-0 right-0 w-1.5 h-full bg-orange-500"></div>
+                              <div className="flex justify-between items-start mb-4 pl-3">
+                                  <div className="flex items-center gap-3">
+                                      <div className="bg-orange-50 p-2 rounded-full text-orange-600"><Clock size={20}/></div>
+                                      <div>
+                                          <h3 className="font-bold text-slate-900">{risk.studentName}</h3>
+                                          <p className="text-xs text-slate-500">تم طباعة الإنذار</p>
+                                      </div>
+                                  </div>
+                                  <span className="text-red-600 font-extrabold bg-red-50 px-2 py-1 rounded text-sm">{risk.days} أيام</span>
+                              </div>
+                              <div className="flex gap-2 border-t border-slate-50 pt-3">
+                                  <button onClick={() => handlePrintWarning(risk)} className="flex-1 text-xs bg-white border border-slate-200 text-slate-600 py-2 rounded-lg font-bold hover:bg-slate-50 flex items-center justify-center gap-1">
+                                      <Printer size={14}/> إعادة طباعة
+                                  </button>
+                                  <button onClick={() => handleExcludeRisk(risk.studentId)} className="flex-1 text-xs bg-emerald-600 text-white py-2 rounded-lg font-bold hover:bg-emerald-700 flex items-center justify-center gap-1">
+                                      <FileX size={14}/> استبعاد / إغلاق
+                                  </button>
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              )}
+          </div>
+      )}
+
       {/* VIEW: ARCHIVE (Unchanged) */}
       {!isDirectoryMode && activeView === 'archive' && (
-          // ... (Archive code remains as is)
           <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
               <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                   <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Archive className="text-emerald-600"/> سجل الحالات المكتملة</h2>
@@ -548,7 +675,6 @@ const StaffStudents: React.FC = () => {
 
       {/* VIEW: INBOX (Unchanged) */}
       {!isDirectoryMode && activeView === 'inbox' && (
-          // ... (Inbox code remains as is)
           <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
               <div className="flex justify-between items-center"><h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Inbox className="text-blue-600"/> الإحالات الواردة (قيد العمل)</h2><button onClick={fetchData} className="p-2 bg-slate-100 rounded-full"><RefreshCw size={16}/></button></div>
               
@@ -606,7 +732,6 @@ const StaffStudents: React.FC = () => {
 
       {/* VIEW: SESSIONS (Unchanged) */}
       {!isDirectoryMode && activeView === 'sessions' && (
-          // ... (Sessions code remains as is)
           <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex justify-between items-center">
                   <h2 className="text-lg font-bold text-slate-800">سجل الجلسات</h2>
@@ -666,9 +791,10 @@ const StaffStudents: React.FC = () => {
           </div>
       )}
 
-      {/* Directory View (Improved for Mobile) */}
+      {/* Directory View */}
       {(activeView === 'directory') && (
          <div className="space-y-6 animate-fade-in max-w-5xl mx-auto">
+              {/* ... (Directory code remains same as previous but omitted for brevity as it works) ... */}
               <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row gap-3 shadow-sm">
                     <div className="relative flex-1">
                         <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
@@ -709,7 +835,7 @@ const StaffStudents: React.FC = () => {
                                       </div>
                                   </div>
 
-                                  {/* Actions - Now visible on mobile in a new row or stacked */}
+                                  {/* Actions */}
                                   <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100">
                                       {student.phone && (
                                           <>
@@ -736,8 +862,8 @@ const StaffStudents: React.FC = () => {
           </div>
       )}
 
-      {/* STUDENT SELECTOR MODAL & STUDENT MODAL (No changes needed, code omitted for brevity as it was working) */}
-      {/* ... (Existing Modal Code) ... */}
+      {/* MODALS (Existing ones kept) */}
+      {/* ... (Student Selector Modal & Student Modal code remains same) ... */}
       {isSelectingStudentForSession && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">

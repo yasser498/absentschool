@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine, LogOut as ExitIcon } from 'lucide-react';
-import { StaffUser } from '../types';
-import { getPendingRequestsCountForStaff } from '../services/storage';
+import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine, LogOut as ExitIcon, Download, Share, BellRing, Loader2 } from 'lucide-react';
+import { StaffUser, AppNotification } from '../types';
+import { getPendingRequestsCountForStaff, getNotifications, getParentChildren, createNotification } from '../services/storage';
 import ChatBot from './ChatBot';
 import InstallPrompt from './InstallPrompt';
+import { supabase } from '../supabaseClient';
 
 const { Link, useLocation } = ReactRouterDOM as any;
 
@@ -19,7 +20,19 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // Desktop Collapse State
   const [pendingCount, setPendingCount] = useState(0);
+  const [notificationCount, setNotificationCount] = useState(0);
   const [staffPermissions, setStaffPermissions] = useState<string[]>([]);
+
+  // Install Logic State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(false);
+
+  // Notification Permission State
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+
+  // Notification Audio Ref
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -31,7 +44,158 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
-  // Fetch Pending Count for Staff and Permissions
+  // Initialize Audio & Check Permissions
+  useEffect(() => {
+    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    
+    if ('Notification' in window) {
+      setNotifPermission(Notification.permission);
+    }
+  }, []);
+
+  // Install Prompt Logic
+  useEffect(() => {
+    // Check if installed
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      setIsInstalled(true);
+    }
+
+    // Check iOS
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    setIsIOS(/iphone|ipad|ipod/.test(userAgent));
+
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstalled(false);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+    window.addEventListener('appinstalled', () => setIsInstalled(true));
+    
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', () => setIsInstalled(true));
+    }
+  }, []);
+
+  const handleInstallClick = () => {
+    if (isIOS) {
+      alert("لتثبيت التطبيق على الآيفون:\n1. اضغط على زر المشاركة (Share) في أسفل المتصفح\n2. اختر 'إضافة إلى الصفحة الرئيسية' (Add to Home Screen)");
+    } else if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choice: any) => {
+        if (choice.outcome === 'accepted') {
+          setIsInstalled(true);
+          setDeferredPrompt(null);
+        }
+      });
+    } else {
+        // Fallback if prompt is lost or not supported
+        alert("لتثبيت التطبيق، يرجى استخدام خيار 'إضافة إلى الشاشة الرئيسية' من إعدادات المتصفح.");
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      alert("هذا المتصفح لا يدعم الإشعارات.");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotifPermission(permission);
+    if (permission === 'granted') {
+      // Send a test notification
+      if ('serviceWorker' in navigator) {
+         navigator.serviceWorker.ready.then(registration => {
+            registration.showNotification("تم تفعيل الإشعارات", {
+                body: "ستصلك التنبيهات المدرسية هنا فوراً.",
+                icon: SCHOOL_LOGO
+            });
+         });
+      }
+    }
+  };
+
+  // --- GLOBAL REALTIME NOTIFICATIONS (System Level) ---
+  useEffect(() => {
+    // Determine current User ID (Parent or Staff)
+    const parentId = localStorage.getItem('ozr_parent_id');
+    const staffSession = localStorage.getItem('ozr_staff_session');
+    let userId = '';
+    let childrenIds: string[] = [];
+
+    const setupListener = async () => {
+        if (parentId) {
+            userId = parentId;
+            const children = await getParentChildren(parentId);
+            childrenIds = children.map(c => c.studentId);
+        } else if (staffSession) {
+            const user = JSON.parse(staffSession);
+            userId = user.id;
+        } else {
+            return; // No user logged in
+        }
+
+        const watchedIds = [userId, ...childrenIds, 'ALL']; // Target User, Their Children, or Global
+
+        const channel = supabase.channel('global_system_notifications')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'notifications' },
+                async (payload) => {
+                    const newNotif = payload.new as AppNotification;
+                    
+                    // Filter: Is this notification relevant to me?
+                    if (watchedIds.includes(newNotif.targetUserId)) {
+                        
+                        // 1. Play Sound (if configured)
+                        if (audioRef.current) {
+                            audioRef.current.play().catch(() => {});
+                        }
+
+                        // 2. Trigger System Notification (The one that appears on lock screen / status bar)
+                        if (Notification.permission === 'granted') {
+                            const title = newNotif.title;
+                            const options: NotificationOptions = {
+                                body: newNotif.message,
+                                icon: SCHOOL_LOGO,
+                                badge: SCHOOL_LOGO, // Android small icon
+                                tag: 'school-alert', // Grouping
+                                // @ts-ignore
+                                renotify: true,
+                                data: { url: window.location.origin }, // For click handling
+                                // @ts-ignore
+                                vibrate: [200, 100, 200]
+                            };
+
+                            // Use Service Worker for robust notifications (works better on mobile/PWA)
+                            if ('serviceWorker' in navigator) {
+                                const registration = await navigator.serviceWorker.ready;
+                                registration.showNotification(title, options);
+                            } else {
+                                // Fallback for standard web
+                                new Notification(title, options);
+                            }
+                        }
+                        
+                        // 3. Update Badge inside app if staff
+                        if (role === 'staff') {
+                            setNotificationCount(prev => prev + 1);
+                        }
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    };
+
+    setupListener();
+  }, [role]);
+
+  // Fetch Pending Count & Notifications for Staff
   useEffect(() => {
     if (role === 'staff') {
       const fetchStaffData = async () => {
@@ -39,30 +203,27 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
         if (session) {
           const user: StaffUser = JSON.parse(session);
           
-          // Set permissions (default to basic if empty)
           setStaffPermissions(user.permissions || ['attendance', 'requests', 'reports']);
 
-          // Only fetch count if user has requests permission
           if (!user.permissions || user.permissions.includes('requests')) {
               const count = await getPendingRequestsCountForStaff(user.assignments || []);
               setPendingCount(count);
           }
+
+          const notifs = await getNotifications(user.id);
+          const unread = notifs.filter((n: any) => !n.isRead).length;
+          setNotificationCount(unread);
         }
       };
       fetchStaffData();
       
-      // Poll every 60 seconds
       const interval = setInterval(fetchStaffData, 60000);
       return () => clearInterval(interval);
     }
   }, [role]);
 
-  // Helper to check permission
   const hasPermission = (key: string) => staffPermissions.includes(key);
-
   const toggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed);
-
-  // Logic to show ChatBot only on main screens
   const showChatBot = ['/', '/staff/home', '/admin/dashboard'].includes(location.pathname);
 
   const NavItem = ({ to, icon: Icon, label, badge, activeColor = 'blue' }: { to: string, icon: any, label: string, badge?: number, activeColor?: string }) => (
@@ -167,6 +328,19 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
           )}
         </div>
 
+        {/* Enable Notification Button (If Permission is default/prompt) */}
+        {notifPermission === 'default' && (
+            <div className={`px-4 mb-2 animate-pulse ${isSidebarCollapsed ? 'px-2' : ''}`}>
+                <button 
+                    onClick={requestNotificationPermission}
+                    className={`w-full bg-blue-100 text-blue-700 rounded-xl p-3 text-xs font-bold flex items-center justify-center gap-2 hover:bg-blue-200 transition-colors ${isSidebarCollapsed ? 'flex-col p-2 text-[9px]' : ''}`}
+                >
+                    <BellRing size={isSidebarCollapsed ? 16 : 14} />
+                    {!isSidebarCollapsed && <span>تفعيل التنبيهات</span>}
+                </button>
+            </div>
+        )}
+
         {/* Scrollable Navigation Links */}
         <nav className="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-slate-200 pb-20 md:pb-4 space-y-1">
           
@@ -211,7 +385,7 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
 
           {role === 'staff' && (
             <>
-               <NavItem to="/staff/home" icon={Home} label="القائمة الرئيسية" activeColor="blue" />
+               <NavItem to="/staff/home" icon={Home} label="القائمة الرئيسية" activeColor="blue" badge={notificationCount} />
 
                <SectionLabel label="المهام اليومية" />
                {hasPermission('gate_security') && (
@@ -267,6 +441,21 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
               </button>
             </>
           )}
+
+          {/* INSTALL APP BUTTON (Visible if not installed) */}
+          {!isInstalled && (
+            <>
+                <div className="my-2 border-t border-slate-100 mx-4"></div>
+                <button
+                    onClick={handleInstallClick}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-colors duration-200 font-bold shrink-0 ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}
+                    title="تثبيت التطبيق"
+                >
+                    <Download size={22} className="shrink-0" />
+                    {!isSidebarCollapsed && <span>تثبيت التطبيق</span>}
+                </button>
+            </>
+          )}
         </nav>
 
         {/* Footer Info - Fixed at Bottom */}
@@ -288,7 +477,7 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
       {/* Chat Bot Widget - Only on Main Screens */}
       {showChatBot && <ChatBot />}
       
-      {/* Install App Prompt */}
+      {/* Install App Prompt (Popup Banner) */}
       <InstallPrompt />
 
       {/* Mobile Overlay */}

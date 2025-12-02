@@ -1,9 +1,10 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
 import { 
   FileText, Clock, CheckCircle, Sparkles, Calendar, AlertTriangle, Loader2, BrainCircuit, 
-  Search, Settings, Printer, BarChart2, Users, Trash2, ShieldAlert, Send, Megaphone, Activity, LayoutGrid, RefreshCw, Plus, UserCheck, CalendarCheck, Edit, GitCommit, List, Save, AlertCircle, Eye, ArrowRight, Gavel, Check, School, LogOut, MessageSquare
+  Search, Settings, Printer, BarChart2, Users, Trash2, ShieldAlert, Send, Megaphone, Activity, LayoutGrid, RefreshCw, Plus, UserCheck, CalendarCheck, Edit, GitCommit, List, Save, AlertCircle, Eye, ArrowRight, Gavel, Check, School, LogOut, MessageSquare, Bell
 } from 'lucide-react';
 import { 
   getRequests, getStudents, getConsecutiveAbsences, resolveAbsenceAlert, getBehaviorRecords, 
@@ -12,7 +13,8 @@ import {
   clearReferrals, getSchoolNews, updateSchoolNews, addSchoolNews, deleteSchoolNews,
   getAvailableSlots, addAppointmentSlot, deleteAppointmentSlot, getDailyAppointments, getStaffUsers,
   getBotContext, getExitPermissions, generateDefaultAppointmentSlots, updateAppointmentSlot,
-  getStudentObservations, getReferrals, updateReferralStatus, getAdminInsights
+  getStudentObservations, getReferrals, updateReferralStatus, getAdminInsights,
+  sendBatchNotifications, generateTeacherAbsenceSummary, sendPendingReferralReminders
 } from '../../services/storage';
 import { ExcuseRequest, Student, BehaviorRecord, AttendanceRecord, SchoolNews, Appointment, AppointmentSlot, StaffUser, ExitPermission, StudentObservation, Referral, AdminInsight } from '../../types';
 
@@ -22,7 +24,7 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   
   // Navigation & View State
-  const [activeView, setActiveView] = useState<'overview' | 'tracking' | 'behavior' | 'appointments' | 'directives' | 'news' | 'settings'>('overview');
+  const [activeView, setActiveView] = useState<'overview' | 'tracking' | 'behavior' | 'appointments' | 'directives' | 'news' | 'notifications' | 'settings'>('overview');
   
   // Core Data
   const [requests, setRequests] = useState<ExcuseRequest[]>([]);
@@ -32,6 +34,7 @@ const Dashboard: React.FC = () => {
   const [observations, setObservations] = useState<StudentObservation[]>([]); 
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [todaysExits, setTodaysExits] = useState<ExitPermission[]>([]);
+  const [staffUsers, setStaffUsers] = useState<StaffUser[]>([]);
   
   const [dataLoading, setDataLoading] = useState(true);
   
@@ -70,13 +73,20 @@ const Dashboard: React.FC = () => {
   const [sentDirectives, setSentDirectives] = useState<AdminInsight[]>([]);
   const [isSendingDirective, setIsSendingDirective] = useState(false);
 
+  // Notifications Logic
+  const [notifTargetGroup, setNotifTargetGroup] = useState<'all' | 'teachers' | 'admins'>('all');
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+  const [isTriggeringSmart, setIsTriggeringSmart] = useState(false);
+
   // Global Search
   const [globalSearch, setGlobalSearch] = useState('');
 
   const fetchData = async () => {
       setDataLoading(true);
       try {
-        const [reqs, studs, behaviors, atts, news, apps, obs, refs, risks, slts, exits, dirs] = await Promise.all([
+        const [reqs, studs, behaviors, atts, news, apps, obs, refs, risks, slts, exits, dirs, users] = await Promise.all([
             getRequests(), 
             getStudents(), 
             getBehaviorRecords(),
@@ -88,7 +98,8 @@ const Dashboard: React.FC = () => {
             getConsecutiveAbsences(),
             getAvailableSlots(apptDate),
             getExitPermissions(apptDate),
-            getAdminInsights()
+            getAdminInsights(),
+            getStaffUsers()
         ]);
         setRequests(reqs);
         setStudents(studs);
@@ -102,6 +113,7 @@ const Dashboard: React.FC = () => {
         setSlots(slts);
         setTodaysExits(exits);
         setSentDirectives(dirs);
+        setStaffUsers(users);
 
       } catch (error) {
         console.error("Failed to fetch dashboard data", error);
@@ -251,6 +263,54 @@ const Dashboard: React.FC = () => {
       } catch(e) { alert("فشل التحسين"); }
   };
 
+  // --- NOTIFICATIONS HANDLERS ---
+  const handleSendCustomNotification = async () => {
+      if (!notifTitle || !notifMessage) {
+          alert("يرجى تعبئة العنوان والرسالة.");
+          return;
+      }
+      setIsSendingNotif(true);
+      try {
+          let targetIds: string[] = [];
+          if (notifTargetGroup === 'all') {
+              targetIds = staffUsers.map(u => u.id);
+          } else if (notifTargetGroup === 'teachers') {
+              targetIds = staffUsers.filter(u => !u.permissions?.includes('students') && !u.permissions?.includes('deputy')).map(u => u.id);
+          } else if (notifTargetGroup === 'admins') {
+              targetIds = staffUsers.filter(u => u.permissions?.includes('students') || u.permissions?.includes('deputy')).map(u => u.id);
+          }
+
+          if (targetIds.length === 0) {
+              alert("لا يوجد مستخدمين في الفئة المستهدفة.");
+              return;
+          }
+
+          await sendBatchNotifications(targetIds, 'info', notifTitle, notifMessage);
+          alert(`تم إرسال الإشعار لـ ${targetIds.length} مستخدم.`);
+          setNotifTitle(''); setNotifMessage('');
+      } catch (e) {
+          alert("فشل الإرسال.");
+      } finally {
+          setIsSendingNotif(false);
+      }
+  };
+
+  const handleTriggerSummary = async () => {
+      setIsTriggeringSmart(true);
+      try {
+          const result = await generateTeacherAbsenceSummary();
+          alert(result.message);
+      } catch (e) { alert("حدث خطأ."); } finally { setIsTriggeringSmart(false); }
+  };
+
+  const handleTriggerReferralReminder = async () => {
+      setIsTriggeringSmart(true);
+      try {
+          const result = await sendPendingReferralReminders();
+          alert(result.message);
+      } catch (e) { alert("حدث خطأ."); } finally { setIsTriggeringSmart(false); }
+  };
+
   // --- RENDERERS ---
   const StatCard = ({ title, value, icon: Icon, color }: any) => (
       <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
@@ -289,6 +349,7 @@ const Dashboard: React.FC = () => {
               { id: 'tracking', label: 'الإحالات', icon: GitCommit },
               { id: 'appointments', label: 'المواعيد والأمن', icon: CalendarCheck },
               { id: 'directives', label: 'التوجيهات', icon: Megaphone },
+              { id: 'notifications', label: 'الإشعارات', icon: Bell },
               { id: 'news', label: 'المركز الإعلامي', icon: FileText },
               { id: 'settings', label: 'الإعدادات', icon: Settings },
           ].map(tab => (
@@ -459,6 +520,101 @@ const Dashboard: React.FC = () => {
                               <button onClick={()=>clearAdminInsights().then(fetchData)} className="text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>
                           </div>
                       ))}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* === NEW: NOTIFICATIONS === */}
+      {activeView === 'notifications' && (
+          <div className="px-6 space-y-6 animate-fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Custom Message Composer */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                      <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                          <Bell className="text-blue-600" /> إرسال إشعار فوري
+                      </h2>
+                      
+                      <div className="space-y-4">
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 block mb-2">الفئة المستهدفة</label>
+                              <div className="flex bg-slate-50 p-1 rounded-xl">
+                                  {[
+                                      {id: 'all', label: 'الكل'}, 
+                                      {id: 'teachers', label: 'المعلمين'}, 
+                                      {id: 'admins', label: 'الإداريين/الموجهين'}
+                                  ].map(opt => (
+                                      <button 
+                                          key={opt.id} 
+                                          onClick={() => setNotifTargetGroup(opt.id as any)}
+                                          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${notifTargetGroup === opt.id ? 'bg-white shadow text-blue-900' : 'text-slate-500 hover:text-slate-700'}`}
+                                      >
+                                          {opt.label}
+                                      </button>
+                                  ))}
+                              </div>
+                          </div>
+
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 block mb-1">عنوان الإشعار</label>
+                              <input 
+                                  value={notifTitle} 
+                                  onChange={e => setNotifTitle(e.target.value)} 
+                                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-100" 
+                                  placeholder="مثال: اجتماع طارئ"
+                              />
+                          </div>
+
+                          <div>
+                              <label className="text-xs font-bold text-slate-500 block mb-1">نص الرسالة</label>
+                              <textarea 
+                                  value={notifMessage} 
+                                  onChange={e => setNotifMessage(e.target.value)} 
+                                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-blue-100" 
+                                  placeholder="اكتب الرسالة هنا..."
+                              ></textarea>
+                          </div>
+
+                          <button 
+                              onClick={handleSendCustomNotification} 
+                              disabled={isSendingNotif} 
+                              className="w-full bg-blue-900 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-800 transition-all shadow-lg"
+                          >
+                              {isSendingNotif ? <Loader2 className="animate-spin" /> : <Send size={18} />} إرسال الإشعار
+                          </button>
+                      </div>
+                  </div>
+
+                  {/* Smart Triggers */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col">
+                      <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                          <Sparkles className="text-purple-600" /> التنبيهات الذكية
+                      </h2>
+                      <div className="space-y-4 flex-1">
+                          <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                              <h3 className="font-bold text-indigo-900 mb-1 flex items-center gap-2"><UserCheck size={16}/> ملخص الغياب للمعلمين</h3>
+                              <p className="text-xs text-indigo-700 mb-3">يقوم النظام بتحليل غياب اليوم وإرسال رسالة لكل معلم بعدد الطلاب الغائبين في فصوله.</p>
+                              <button 
+                                  onClick={handleTriggerSummary}
+                                  disabled={isTriggeringSmart}
+                                  className="w-full bg-white text-indigo-700 border border-indigo-200 py-2 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors"
+                              >
+                                  {isTriggeringSmart ? 'جاري التنفيذ...' : 'تشغيل وإرسال الآن'}
+                              </button>
+                          </div>
+
+                          <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                              <h3 className="font-bold text-amber-900 mb-1 flex items-center gap-2"><AlertCircle size={16}/> تذكير بالإحالات المعلقة</h3>
+                              <p className="text-xs text-amber-700 mb-3">تنبيه الموجه الطلابي ووكيل الشؤون بوجود حالات تتطلب اتخاذ إجراء.</p>
+                              <button 
+                                  onClick={handleTriggerReferralReminder}
+                                  disabled={isTriggeringSmart}
+                                  className="w-full bg-white text-amber-700 border border-amber-200 py-2 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors"
+                              >
+                                  {isTriggeringSmart ? 'جاري التنفيذ...' : 'إرسال التذكير'}
+                              </button>
+                          </div>
+                      </div>
                   </div>
               </div>
           </div>

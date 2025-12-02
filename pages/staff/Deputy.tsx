@@ -1,11 +1,11 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Briefcase, AlertTriangle, Plus, Search, Loader2, X, Send, Sparkles, 
   User, FileWarning, Check, BarChart2, Printer, TrendingUp, Filter, 
   Trash2, Edit, ArrowRight, LayoutGrid, FileText, School, Inbox, ChevronLeft,
   Calendar, AlertCircle, PieChart as PieIcon, List, Activity, ShieldAlert, Gavel, Forward, CheckCircle, Phone, Clock,
-  Medal, Star, ClipboardList, GitCommit, Eye, ArrowUpRight, CheckSquare, FileBadge, PenTool, Wand2, ChevronRight
+  Medal, Star, ClipboardList, GitCommit, Eye, ArrowUpRight, CheckSquare, FileBadge, PenTool, Wand2, ChevronRight, Gavel as HammerIcon,
+  AlertOctagon, History, Trophy, MessageCircle
 } from 'lucide-react';
 import { 
   getStudents, 
@@ -72,6 +72,7 @@ const StaffDeputy: React.FC = () => {
   const [records, setRecords] = useState<BehaviorRecord[]>([]);
   const [referrals, setReferrals] = useState<Referral[]>([]); 
   const [riskList, setRiskList] = useState<any[]>([]); 
+  // Positive behavior data
   const [positiveObservations, setPositiveObservations] = useState<StudentObservation[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -111,7 +112,11 @@ const StaffDeputy: React.FC = () => {
   const [recordToPrint, setRecordToPrint] = useState<BehaviorRecord | null>(null);
   const [studentToPrint, setStudentToPrint] = useState<Student | null>(null); 
   const [absenceDatesToPrint, setAbsenceDatesToPrint] = useState<string[]>([]);
+  const [certificateData, setCertificateData] = useState<{reason: string} | null>(null);
   const [referralToPrint, setReferralToPrint] = useState<Referral | null>(null);
+
+  // Search
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     const session = localStorage.getItem('ozr_staff_session');
@@ -383,10 +388,17 @@ const StaffDeputy: React.FC = () => {
 
   const handleFinalizeReferral = async () => {
       if (!referralToClose || !closeDecision.trim()) return;
-      await updateReferralStatus(referralToClose.id, 'resolved', `[قرار الوكيل]: ${closeDecision}`); 
+      await updateReferralStatus(referralToClose.id, 'resolved', undefined); 
       setShowCloseModal(false);
       fetchData();
       alert("تم اعتماد القرار وإغلاق الحالة.");
+  };
+
+  const handlePrintCertificate = (student: Student, reason: string) => {
+      setStudentToPrint(student);
+      setCertificateData({ reason });
+      setPrintMode('certificate');
+      setTimeout(() => { window.print(); setPrintMode('none'); }, 500);
   };
 
   const filteredPositiveObservations = useMemo(() => {
@@ -426,117 +438,20 @@ const StaffDeputy: React.FC = () => {
             </div>
             )}
 
-            {printMode === 'referral_report' && referralToPrint && (
-                <div>
-                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="تقرير إحالة طالب" />
-                    <div className="mt-6 px-4">
-                        <h1 className="official-title">نموذج إحالة للموجه الطلابي</h1>
-                        <div className="border-2 border-black p-6 space-y-6 text-lg">
-                            <div className="flex justify-between">
-                                <p><strong>اسم الطالب:</strong> {referralToPrint.studentName}</p>
-                                <p><strong>الصف:</strong> {referralToPrint.grade} - {referralToPrint.className}</p>
-                            </div>
-                            <hr className="border-black"/>
-                            <div>
-                                <p className="font-bold mb-2">سبب الإحالة:</p>
-                                <p>{referralToPrint.reason}</p>
-                            </div>
-                            {referralToPrint.outcome && (
-                                <>
-                                <hr className="border-black"/>
-                                <div>
-                                    <p className="font-bold mb-2">رأي / إجراء الموجه الطلابي:</p>
-                                    <p>{referralToPrint.outcome}</p>
-                                </div>
-                                </>
-                            )}
-                        </div>
-                        <div className="mt-12 flex justify-between px-10">
-                            <div className="text-center"><p className="font-bold mb-8">المحول (الوكيل/المعلم)</p><p>.............................</p></div>
-                            <div className="text-center"><p className="font-bold mb-8">الموجه الطلابي</p><p>.............................</p></div>
-                            <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
-                        </div>
+            {printMode === 'certificate' && studentToPrint && certificateData && (
+                <div className="h-full flex flex-col pt-10">
+                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="" />
+                    <div className="flex-1 flex flex-col items-center justify-center text-center relative z-10">
+                        <h1 className="text-4xl font-extrabold mb-4">شهادة شكر وتقدير</h1>
+                        <p className="text-xl mb-6">تسر إدارة المدرسة أن تتقدم بالشكر للطالب:</p>
+                        <h2 className="text-3xl font-bold mb-6 border-b-2 border-black pb-2 px-8">{studentToPrint.name}</h2>
+                        <p className="text-xl mb-2">وذلك لتميزه في:</p>
+                        <h3 className="text-2xl font-bold mb-8">{certificateData.reason}</h3>
+                        <p className="text-lg">متمنين له دوام التوفيق والنجاح.</p>
                     </div>
-                </div>
-            )}
-
-            {printMode === 'positive_daily_report' && (
-                <div>
-                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="السلوك والمواظبة" />
-                    <div className="text-center mb-6">
-                        <h1 className="official-title">تقرير التميز السلوكي اليومي</h1>
-                        <p className="text-lg">التاريخ: {reportDate}</p>
-                    </div>
-                    <table className="w-full text-right border-collapse border border-black text-sm mt-4">
-                        <thead>
-                            <tr className="bg-gray-100">
-                                <th className="border border-black p-2 w-10">م</th>
-                                <th className="border border-black p-2">اسم الطالب</th>
-                                <th className="border border-black p-2">الصف</th>
-                                <th className="border border-black p-2">نوع التميز (السلوك الإيجابي)</th>
-                                <th className="border border-black p-2 w-20 text-center">النقاط</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredPositiveObservations.length > 0 ? filteredPositiveObservations.map((obs, idx) => (
-                                <tr key={idx}>
-                                    <td className="border border-black p-2 text-center">{idx + 1}</td>
-                                    <td className="border border-black p-2 font-bold">{obs.studentName}</td>
-                                    <td className="border border-black p-2">{obs.grade} - {obs.className}</td>
-                                    <td className="border border-black p-2">{obs.content.replace('تعزيز سلوكي: ', '').split('(')[0]}</td>
-                                    <td className="border border-black p-2 text-center">5</td>
-                                </tr>
-                            )) : <tr><td colSpan={5} className="border p-4 text-center">لا يوجد طلاب مسجلين اليوم</td></tr>}
-                        </tbody>
-                    </table>
-                    <div className="mt-16 flex justify-between px-10">
-                        <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
-                        <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
-                    </div>
-                </div>
-            )}
-
-            {printMode === 'absence_referral' && studentToPrint && (
-                <div>
-                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="وكالة شؤون الطلاب - شؤون الغياب" />
-                    <div className="mt-8 px-4">
-                        <h1 className="official-title">إحالة طالب للموجه الطلابي (غياب)</h1>
-                        <div className="text-right space-y-6 text-lg mt-6">
-                            <p>المكرم الموجه الطلابي.. وفقه الله</p>
-                            <p>السلام عليكم ورحمة الله وبركاته،،،</p>
-                            <p>نحيل إليكم الطالب: <strong>{studentToPrint.name}</strong> بالصف: <strong>{studentToPrint.grade} / {studentToPrint.className}</strong></p>
-                            <p>وذلك بسبب تكرار الغياب (بدون عذر) في الأيام التالية:</p>
-                            <div className="flex flex-wrap gap-2 my-4">
-                                {absenceDatesToPrint.map(d => <span key={d} className="border border-black px-3 py-1 bg-gray-50">{d}</span>)}
-                            </div>
-                            <p>نأمل دراسة حالة الطالب ومتابعة غيابه واتخاذ اللازم وفق قواعد السلوك والمواظبة.</p>
-                        </div>
-                        <div className="mt-16 flex justify-between px-8">
-                            <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
-                            <div className="text-center"><p className="font-bold mb-8">الاستلام (الموجه)</p><p>.............................</p></div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {printMode === 'absence_notice' && studentToPrint && (
-                <div>
-                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="وكالة شؤون الطلاب" />
-                    <div className="mt-8 px-4">
-                        <h1 className="official-title">إشعار غياب (أول/ثاني)</h1>
-                        <div className="text-right space-y-6 text-lg mt-6">
-                            <p>المكرم ولي أمر الطالب: <strong>{studentToPrint.name}</strong> .. المحترم</p>
-                            <p>السلام عليكم ورحمة الله وبركاته،،،</p>
-                            <p>نفيدكم بأن ابنكم تغيب عن المدرسة في الأيام التالية بدون عذر مقبول:</p>
-                            <div className="flex flex-wrap gap-2 my-4 font-mono font-bold">
-                                {absenceDatesToPrint.map(d => <span key={d} className="border-b-2 border-black px-2">{d}</span>)}
-                            </div>
-                            <p>نأمل منكم حث الابن على الانضباط وإحضار ما يبرر الغياب، تفادياً للحسم من درجات المواظبة.</p>
-                        </div>
-                        <div className="mt-16 flex justify-between px-8">
-                            <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
-                            <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
-                        </div>
+                    <div className="flex justify-between px-10 mt-10">
+                        <div className="text-center"><p className="font-bold mb-4">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
+                        <div className="text-center"><p className="font-bold mb-4">مدير المدرسة</p><p>.............................</p></div>
                     </div>
                 </div>
             )}
@@ -600,6 +515,25 @@ const StaffDeputy: React.FC = () => {
                                     </div>
                                     <p className="text-sm font-bold text-red-700 mb-1">{rec.violationName}</p>
                                     <p className="text-xs text-slate-500">{rec.actionTaken}</p>
+                                    <div className="space-y-2">
+                                        <p className="text-xs text-slate-500 bg-slate-50 p-2 rounded-lg inline-block border border-slate-100">الإجراء: {rec.actionTaken}</p>
+                                        
+                                        {/* Updated: Parent Feedback Section */}
+                                        {rec.parentFeedback && (
+                                            <div className="flex items-start gap-2 bg-purple-50 p-2.5 rounded-xl border border-purple-100 mt-2 animate-fade-in">
+                                                <MessageCircle size={16} className="text-purple-600 mt-0.5 shrink-0"/>
+                                                <div className="flex-1">
+                                                    <span className="text-[10px] font-bold text-purple-700 block mb-0.5">رد ولي الأمر (عبر البوابة):</span>
+                                                    <p className="text-xs text-slate-700 leading-relaxed font-medium">{rec.parentFeedback}</p>
+                                                    {rec.parentViewedAt && (
+                                                        <span className="text-[9px] text-purple-400 mt-1 block">
+                                                            تم الرد في: {new Date(rec.parentViewedAt).toLocaleDateString('ar-SA')}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="flex gap-2 items-center">
                                     <button onClick={() => handlePrintViolationAction(rec, 'summons')} className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200" title="استدعاء"><FileWarning size={16}/></button>
@@ -613,69 +547,32 @@ const StaffDeputy: React.FC = () => {
             </div>
         )}
 
-        {/* MODAL FOR VIOLATION */}
-        {showViolationModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-fade-in-up">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-xl font-bold text-slate-800">تسجيل مخالفة جديدة</h2>
-                        <button onClick={() => setShowViolationModal(false)}><X size={20} className="text-slate-400"/></button>
-                    </div>
-                    {violationStep === 'form' ? (
-                        <form onSubmit={handleViolationSubmit} className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <select value={formGrade} onChange={e => {setFormGrade(e.target.value); setFormClass('');}} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الصف</option>{GRADES.map(g=><option key={g} value={g}>{g}</option>)}</select>
-                                <select value={formClass} disabled={!formGrade} onChange={e => setFormClass(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الفصل</option>{availableClasses.map(c=><option key={c} value={c}>{c}</option>)}</select>
-                            </div>
-                            <select value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الطالب</option>{availableStudents.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
-                            <select value={selectedDegree} onChange={e => {setSelectedDegree(e.target.value); setSelectedViolation('');}} className="w-full p-2 border rounded-lg bg-slate-50">{BEHAVIOR_VIOLATIONS.map(v=><option key={v.degree} value={v.degree}>{v.degree}</option>)}</select>
-                            <select value={selectedViolation} onChange={e => setSelectedViolation(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">المخالفة</option>{BEHAVIOR_VIOLATIONS.find(v=>v.degree===selectedDegree)?.violations.map(v=><option key={v} value={v}>{v}</option>)}</select>
-                            <input value={actionTaken} onChange={e => setActionTaken(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50" placeholder="الإجراء المتخذ..."/>
-                            <button type="submit" className="w-full bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700">حفظ المخالفة</button>
-                        </form>
-                    ) : (
-                        <div className="text-center">
-                            <CheckCircle size={48} className="text-emerald-500 mx-auto mb-4"/>
-                            <h3 className="text-xl font-bold mb-4">تم الحفظ بنجاح</h3>
-                            <div className="flex gap-2 justify-center">
-                                <button onClick={() => { if(lastSavedRecord) handlePrintViolationAction(lastSavedRecord, 'summons'); }} className="px-4 py-2 bg-slate-100 rounded-lg font-bold">طباعة استدعاء</button>
-                                <button onClick={() => { if(lastSavedRecord) handlePrintViolationAction(lastSavedRecord, 'commitment'); }} className="px-4 py-2 bg-slate-100 rounded-lg font-bold">طباعة تعهد</button>
-                                <button onClick={() => { resetForm(); setShowViolationModal(false); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold">إغلاق</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-        )}
-        
-        {/* POSITIVE BEHAVIOR VIEW */}
+        {/* POSITIVE BEHAVIOR (EXCELLENCE) */}
         {activeView === 'positive' && (
-            <div className="space-y-4 animate-fade-in">
+            <div className="space-y-6 animate-fade-in">
                 <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
-                    <h2 className="text-lg font-bold text-slate-800">سجل التميز والسلوك الإيجابي</h2>
-                    <div className="flex gap-2">
-                        <div className="flex items-center bg-slate-50 rounded-lg border px-2">
-                            <input type="date" value={reportDate} onChange={e=>setReportDate(e.target.value)} className="bg-transparent text-sm font-bold outline-none"/>
-                            <button onClick={handlePrintPositiveDailyReport} className="p-1 hover:bg-white rounded"><Printer size={16}/></button>
-                        </div>
-                        <button onClick={() => setShowPositiveModal(true)} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"><Plus size={18}/> رصد تميز</button>
-                    </div>
+                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Star size={20} className="text-yellow-500"/> سجل التميز والسلوك الإيجابي</h2>
+                    <button onClick={() => setShowPositiveModal(true)} className="bg-emerald-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition-all"><Plus size={18}/> تسجيل تميز</button>
                 </div>
-                
-                {filteredPositiveObservations.length === 0 ? <p className="text-center py-10 text-slate-400">لا يوجد سجلات لهذا اليوم.</p> : (
-                    <div className="grid gap-3">
-                        {filteredPositiveObservations.map(obs => (
-                            <div key={obs.id} className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-sm flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-emerald-50 p-2 rounded-xl text-emerald-600"><Star size={20} fill="currentColor"/></div>
-                                    <div>
-                                        <p className="font-bold text-slate-800">{obs.studentName}</p>
-                                        <p className="text-xs text-slate-500">{obs.content}</p>
+
+                {positiveObservations.length === 0 ? <p className="text-center py-10 text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200">لا يوجد سجلات تميز حالياً.</p> : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {positiveObservations.map(obs => (
+                            <div key={obs.id} className="bg-white p-5 rounded-2xl border-l-4 border-emerald-500 shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-emerald-50 p-2 rounded-full text-emerald-600"><Medal size={20}/></div>
+                                        <div>
+                                            <h3 className="font-bold text-slate-800">{obs.studentName}</h3>
+                                            <p className="text-xs text-slate-500">{obs.grade} - {obs.className}</p>
+                                        </div>
                                     </div>
+                                    <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded">{obs.date}</span>
                                 </div>
-                                <div className="flex gap-2">
-                                    <button onClick={() => handleEditPositive(obs)} className="p-2 text-blue-400 hover:bg-blue-50 rounded-lg"><Edit size={16}/></button>
-                                    <button onClick={() => handleDeletePositive(obs.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>
+                                <p className="text-sm text-slate-700 my-3 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">{obs.content.replace('تعزيز سلوكي: ', '').split('(')[0]}</p>
+                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-50">
+                                    <button onClick={() => { const student = students.find(s => s.studentId === obs.studentId); if(student) handlePrintCertificate(student, obs.content.replace('تعزيز سلوكي: ', '').split('(')[0]); }} className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-2 hover:bg-slate-900"><Printer size={12}/> شهادة شكر</button>
+                                    <button onClick={() => handleDeletePositive(obs.id)} className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-100"><Trash2 size={14}/></button>
                                 </div>
                             </div>
                         ))}
@@ -684,79 +581,222 @@ const StaffDeputy: React.FC = () => {
             </div>
         )}
 
-        {/* POSITIVE MODAL */}
-        {showPositiveModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-fade-in-up">
-                    <h2 className="text-xl font-bold text-slate-800 mb-4">{isEditingPositive ? 'تعديل التميز' : 'رصد سلوك إيجابي'}</h2>
-                    <form onSubmit={handlePositiveSubmit} className="space-y-4">
-                        {!isEditingPositive && (
-                            <div className="grid grid-cols-2 gap-4">
-                                <select value={formGrade} onChange={e => {setFormGrade(e.target.value); setFormClass('');}} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الصف</option>{GRADES.map(g=><option key={g} value={g}>{g}</option>)}</select>
-                                <select value={formClass} disabled={!formGrade} onChange={e => setFormClass(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الفصل</option>{availableClasses.map(c=><option key={c} value={c}>{c}</option>)}</select>
+        {/* REFERRALS TAB */}
+        {activeView === 'referrals' && (
+            <div className="space-y-6 animate-fade-in">
+                <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
+                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><GitCommit size={20} className="text-blue-600"/> متابعة الإحالات للموجه الطلابي</h2>
+                </div>
+                
+                {referrals.length === 0 ? <p className="text-center py-10 text-slate-400">لا يوجد إحالات مسجلة.</p> : (
+                    <div className="space-y-3">
+                        {referrals.map(ref => (
+                            <div key={ref.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                                <div className="flex justify-between items-start mb-3 border-b border-slate-50 pb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${ref.status === 'pending' ? 'bg-amber-100 text-amber-700' : ref.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                            {ref.studentName.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">{ref.studentName}</h3>
+                                            <p className="text-xs text-slate-500">{ref.grade} - {ref.className}</p>
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className={`px-2 py-1 rounded text-xs font-bold ${ref.status === 'pending' ? 'bg-amber-100 text-amber-700' : ref.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                            {ref.status === 'pending' ? 'جديدة' : ref.status === 'in_progress' ? 'قيد المعالجة' : 'مغلقة'}
+                                        </span>
+                                        <p className="text-[10px] text-slate-400 mt-1 font-mono">{ref.referralDate}</p>
+                                    </div>
+                                </div>
+                                <div className="text-sm text-slate-600 mb-3">
+                                    <span className="font-bold text-slate-400 text-xs uppercase block mb-1">سبب الإحالة:</span>
+                                    {ref.reason}
+                                </div>
+                                {ref.outcome && (
+                                    <div className="bg-slate-50 p-3 rounded-xl text-sm border border-slate-100">
+                                        <span className="font-bold text-blue-600 text-xs block mb-1">رد الموجه / الإجراء:</span>
+                                        {ref.outcome}
+                                    </div>
+                                )}
                             </div>
-                        )}
-                        {!isEditingPositive && (
-                            <select required value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} className="w-full p-2 border rounded-lg bg-slate-50"><option value="">الطالب</option>{availableStudents.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
-                        )}
-                        <input required value={positiveReason} onChange={e => setPositiveReason(e.target.value)} className="w-full p-2 border rounded-lg" placeholder="سبب التميز (مثلاً: مشاركة فاعلة، نظافة)..."/>
-                        <div className="flex items-center gap-2">
-                            <label className="text-sm font-bold">النقاط:</label>
-                            <input type="number" min="1" value={positivePoints} onChange={e => setPositivePoints(Number(e.target.value))} className="w-20 p-2 border rounded-lg text-center font-bold"/>
+                        ))}
+                    </div>
+                )}
+            </div>
+        )}
+
+        {/* MODAL: POSITIVE BEHAVIOR */}
+        {showPositiveModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-6 animate-fade-in-up">
+                    <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Star className="text-emerald-500"/> تسجيل تميز سلوكي</h2>
+                        <button onClick={() => { setShowPositiveModal(false); resetForm(); }} className="bg-slate-50 p-2 rounded-full text-slate-400 hover:text-red-500"><X size={20}/></button>
+                    </div>
+                    
+                    <form onSubmit={handlePositiveSubmit} className="space-y-4">
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mb-4">
+                            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">بيانات الطالب</label>
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                <select value={formGrade} onChange={e => {setFormGrade(e.target.value); setFormClass('');}} className="w-full p-2 border rounded-lg text-sm font-bold bg-white"><option value="">الصف</option>{GRADES.map(g=><option key={g} value={g}>{g}</option>)}</select>
+                                <select value={formClass} disabled={!formGrade} onChange={e => setFormClass(e.target.value)} className="w-full p-2 border rounded-lg text-sm font-bold bg-white"><option value="">الفصل</option>{availableClasses.map(c=><option key={c} value={c}>{c}</option>)}</select>
+                            </div>
+                            <select required value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} className="w-full p-2 border rounded-lg text-sm font-bold bg-white"><option value="">اختر الطالب...</option>{availableStudents.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
                         </div>
-                        <div className="flex gap-2 mt-4">
-                            <button type="button" onClick={resetForm} className="flex-1 bg-slate-100 py-2 rounded-lg">إلغاء</button>
-                            <button type="submit" className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-bold">حفظ</button>
+
+                        <div>
+                            <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">سبب التميز / السلوك الإيجابي</label>
+                            <textarea 
+                                value={positiveReason} 
+                                onChange={e => setPositiveReason(e.target.value)} 
+                                className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
+                                placeholder="مثال: المشاركة الفعالة، مساعدة الزملاء، الأمانة..."
+                                rows={3}
+                            ></textarea>
                         </div>
+
+                        <div className="flex items-center justify-between bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                            <label className="text-sm font-bold text-emerald-800">نقاط التميز المضافة:</label>
+                            <input type="number" min="1" max="50" value={positivePoints} onChange={e => setPositivePoints(parseInt(e.target.value))} className="w-16 text-center p-2 rounded-lg font-bold border border-emerald-200 outline-none focus:border-emerald-500"/>
+                        </div>
+
+                        <button type="submit" className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all flex items-center justify-center gap-2">
+                            <CheckCircle size={18}/> حفظ التميز
+                        </button>
                     </form>
                 </div>
             </div>
         )}
 
-        {/* REFERRALS VIEW */}
-        {activeView === 'referrals' && (
-            <div className="space-y-4 animate-fade-in">
-                <h2 className="text-lg font-bold text-slate-800">متابعة الإحالات الصادرة والواردة</h2>
-                {referrals.length === 0 ? <p className="text-center py-10 text-slate-400">لا يوجد إحالات.</p> : (
-                    <div className="space-y-4">
-                        {referrals.map(ref => (
-                            <div key={ref.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                                <div className="flex justify-between mb-2">
-                                    <h3 className="font-bold text-slate-900">{ref.studentName}</h3>
-                                    <span className={`text-xs px-2 py-1 rounded font-bold ${ref.status==='resolved'?'bg-emerald-100 text-emerald-700':ref.status==='returned_to_deputy'?'bg-purple-100 text-purple-700':'bg-blue-100 text-blue-700'}`}>{ref.status === 'resolved' ? 'مغلق' : ref.status === 'returned_to_deputy' ? 'بانتظار القرار' : 'قيد المعالجة'}</span>
-                                </div>
-                                <p className="text-sm text-slate-600 mb-2">{ref.reason}</p>
-                                {ref.outcome && <div className="bg-slate-50 p-2 rounded text-xs text-slate-700 mb-2 border border-slate-100"><strong>رد الموجه:</strong> {ref.outcome}</div>}
-                                
-                                <div className="flex justify-end gap-2 pt-2 border-t border-slate-50">
-                                    <button onClick={()=>handlePrintReferral(ref)} className="text-xs bg-slate-100 px-3 py-1.5 rounded flex items-center gap-1"><Printer size={12}/> طباعة</button>
-                                    {ref.status === 'returned_to_deputy' && (
-                                        <button onClick={()=>handleOpenCloseModal(ref)} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded font-bold hover:bg-emerald-700 shadow-sm">اتخاذ القرار وإغلاق</button>
-                                    )}
+        {/* MODAL: VIOLATION RECORDING (ENHANCED GRID LAYOUT) */}
+        {showViolationModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl p-0 animate-fade-in-up flex flex-col max-h-[90vh] overflow-hidden">
+                    {/* Modal Header */}
+                    <div className="bg-slate-50 p-6 border-b border-slate-100 flex justify-between items-center">
+                        <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2"><HammerIcon className="text-red-600"/> رصد مخالفة سلوكية</h2>
+                        <button onClick={() => { setShowViolationModal(false); resetForm(); }} className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 shadow-sm"><X size={20}/></button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50/50">
+                    {violationStep === 'form' ? (
+                        <div className="flex flex-col gap-6">
+                            
+                            {/* 1. Student Selection */}
+                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><User size={14}/> بيانات الطالب</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <select value={formGrade} onChange={e => {setFormGrade(e.target.value); setFormClass('');}} className="p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-red-100"><option value="">اختر الصف</option>{GRADES.map(g=><option key={g} value={g}>{g}</option>)}</select>
+                                    <select value={formClass} disabled={!formGrade} onChange={e => setFormClass(e.target.value)} className="p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-red-100 disabled:bg-slate-50"><option value="">اختر الفصل</option>{availableClasses.map(c=><option key={c} value={c}>{c}</option>)}</select>
+                                    <select value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value)} className="p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-red-100 disabled:bg-slate-50" disabled={!formClass}><option value="">اختر الطالب...</option>{availableStudents.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        )}
 
-        {/* CLOSE REFERRAL MODAL */}
-        {showCloseModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 animate-fade-in-up">
-                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2"><Gavel size={20}/> القرار الإداري النهائي</h2>
-                    <p className="text-sm text-slate-500 mb-2">رد الموجه: {referralToClose?.outcome}</p>
-                    <textarea value={closeDecision} onChange={e => setCloseDecision(e.target.value)} className="w-full p-4 border border-slate-300 rounded-xl min-h-[120px] mb-3" placeholder="نص القرار الإداري..."></textarea>
-                    <button onClick={handleImproveDecision} disabled={isImprovingDecision} className="text-xs text-purple-600 flex items-center gap-1 mb-4 font-bold"><Wand2 size={12}/> {isImprovingDecision ? 'جاري الصياغة...' : 'صياغة قانونية (AI)'}</button>
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowCloseModal(false)} className="flex-1 bg-slate-100 py-2 rounded-lg">إلغاء</button>
-                        <button onClick={handleFinalizeReferral} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-bold">اعتماد وإغلاق</button>
+                            {/* 2. Degree Selection (Grid) */}
+                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><AlertOctagon size={14}/> درجة المخالفة</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                                    {BEHAVIOR_VIOLATIONS.map((v) => {
+                                        const isSelected = selectedDegree === v.degree;
+                                        return (
+                                            <button 
+                                                key={v.degree} 
+                                                onClick={() => { setSelectedDegree(v.degree); setSelectedViolation(''); setActionTaken(''); }} 
+                                                className={`p-3 rounded-xl text-xs font-bold border-2 transition-all h-full flex items-center justify-center text-center ${isSelected ? 'bg-red-50 border-red-500 text-red-700 ring-2 ring-offset-2 ring-slate-200' : 'bg-slate-50 border-slate-100 text-slate-500 hover:border-slate-300'}`}
+                                            >
+                                                {v.degree}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* 3. Violation Type & Action (Dynamic) */}
+                            {selectedDegree && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
+                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><List size={14}/> نوع المخالفة</h3>
+                                        <div className="flex-1 overflow-y-auto max-h-60 custom-scrollbar space-y-2 pr-1">
+                                            {BEHAVIOR_VIOLATIONS.find(v => v.degree === selectedDegree)?.violations.map((v) => (
+                                                <button 
+                                                    key={v} 
+                                                    onClick={() => setSelectedViolation(v)}
+                                                    className={`w-full text-right p-3 rounded-xl text-xs font-bold border transition-all ${selectedViolation === v ? 'bg-red-50 text-red-800 border-red-200 shadow-sm' : 'bg-slate-50 text-slate-600 border-slate-100 hover:bg-white hover:border-red-200'}`}
+                                                >
+                                                    {v}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                                        <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Gavel size={14}/> الإجراء النظامي</h3>
+                                        <div className="flex-1 overflow-y-auto max-h-60 custom-scrollbar space-y-2 pr-1 mb-2">
+                                            {BEHAVIOR_VIOLATIONS.find(v => v.degree === selectedDegree)?.actions.map((action, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    onClick={() => setActionTaken(action)}
+                                                    className={`w-full text-right p-3 rounded-xl text-[11px] font-bold border transition-all ${actionTaken === action ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-100 hover:bg-white hover:border-blue-200'}`}
+                                                >
+                                                    {action}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <textarea 
+                                            value={actionTaken} 
+                                            onChange={e => setActionTaken(e.target.value)} 
+                                            className="w-full p-3 border border-slate-200 rounded-xl text-xs outline-none focus:border-red-400 bg-slate-50" 
+                                            placeholder="تخصيص الإجراء..."
+                                            rows={2}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="text-center py-12 animate-fade-in flex flex-col items-center justify-center h-full">
+                            <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-inner animate-bounce-slow">
+                                <CheckCircle size={48} />
+                            </div>
+                            <h3 className="text-3xl font-extrabold text-slate-900 mb-2">تم رصد المخالفة بنجاح</h3>
+                            <p className="text-slate-500 mb-8 max-w-sm mx-auto">تم تحديث سجل الطالب. يمكنك الآن طباعة المستندات المطلوبة للإجراء.</p>
+                            
+                            <div className="flex flex-wrap gap-4 justify-center">
+                                {/* Smart Print Buttons */}
+                                {lastSavedRecord && (lastSavedRecord.actionTaken.includes('استدعاء') || lastSavedRecord.actionTaken.includes('ولي أمر')) && (
+                                    <button onClick={() => handlePrintViolationAction(lastSavedRecord!, 'summons')} className="px-6 py-4 bg-white border-2 border-red-100 text-red-700 rounded-2xl font-bold flex items-center gap-2 hover:bg-red-50 transition-colors shadow-sm hover:shadow-md">
+                                        <FileWarning size={20}/> طباعة استدعاء ولي أمر
+                                    </button>
+                                )}
+                                {lastSavedRecord && (lastSavedRecord.actionTaken.includes('تعهد') || lastSavedRecord.actionTaken.includes('عقد')) && (
+                                    <button onClick={() => handlePrintViolationAction(lastSavedRecord!, 'commitment')} className="px-6 py-4 bg-white border-2 border-blue-100 text-blue-700 rounded-2xl font-bold flex items-center gap-2 hover:bg-blue-50 transition-colors shadow-sm hover:shadow-md">
+                                        <FileText size={20}/> طباعة تعهد خطي
+                                    </button>
+                                )}
+                                <button onClick={() => { resetForm(); setShowViolationModal(false); }} className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-colors shadow-lg">
+                                    إنهاء وإغلاق
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     </div>
+
+                    {/* Modal Footer */}
+                    {violationStep === 'form' && (
+                        <div className="p-6 bg-white border-t border-slate-100 sticky bottom-0 z-10">
+                            <button 
+                                onClick={handleViolationSubmit} 
+                                disabled={!actionTaken || !selectedStudentId} 
+                                className="w-full bg-red-600 text-white py-4 rounded-2xl font-bold text-lg hover:bg-red-700 shadow-xl shadow-red-600/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                <HammerIcon size={20}/> حفظ المخالفة
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         )}
-
       </div>
     </>
   );

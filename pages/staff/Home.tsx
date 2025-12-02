@@ -1,15 +1,15 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardCheck, MessageSquare, BookUser, BarChart2, ShieldCheck, LogOut, Briefcase, FileText, BellRing, Sparkles, X, Calendar, User } from 'lucide-react';
-import { StaffUser, SchoolNews, AdminInsight } from '../../types';
-import { getSchoolNews, getAdminInsights } from '../../services/storage';
+import { ClipboardCheck, MessageSquare, BookUser, BarChart2, ShieldCheck, LogOut, Briefcase, FileText, BellRing, Sparkles, X, Calendar, User, CheckCircle, Info } from 'lucide-react';
+import { StaffUser, SchoolNews, AdminInsight, AppNotification } from '../../types';
+import { getSchoolNews, getAdminInsights, getNotifications, markNotificationRead } from '../../services/storage';
 
 const StaffHome: React.FC = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<StaffUser | null>(null);
   const [news, setNews] = useState<SchoolNews[]>([]);
   const [directives, setDirectives] = useState<AdminInsight[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   
   // State for viewing full details
   const [selectedItem, setSelectedItem] = useState<{
@@ -44,18 +44,25 @@ const StaffHome: React.FC = () => {
     }
     // Otherwise, stay here and show the menu
     
-    // Load News and Directives
+    // Load News, Directives AND Personal Notifications
     const loadInfo = async () => {
-        const [n, d] = await Promise.all([
+        const [n, d, notifs] = await Promise.all([
             getSchoolNews(),
-            getAdminInsights('teachers')
+            getAdminInsights('teachers'),
+            getNotifications(userData.id)
         ]);
         setNews(n);
         setDirectives(d);
+        setNotifications(notifs.filter((n: any) => !n.isRead)); // Show only unread
     };
     loadInfo();
 
   }, [navigate]);
+
+  const handleMarkRead = async (id: string) => {
+      await markNotificationRead(id);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   if (!user) return null;
 
@@ -135,6 +142,37 @@ const StaffHome: React.FC = () => {
         </div>
       </div>
 
+      {/* Notifications Section */}
+      {notifications.length > 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-6 shadow-sm animate-fade-in-up">
+              <h3 className="font-bold text-yellow-900 flex items-center gap-2 mb-4">
+                  <BellRing size={20} className="text-yellow-600" /> التنبيهات الشخصية ({notifications.length})
+              </h3>
+              <div className="grid gap-3">
+                  {notifications.map(n => (
+                      <div key={n.id} className="bg-white p-4 rounded-xl border border-yellow-100 shadow-sm flex justify-between items-center hover:shadow-md transition-all">
+                          <div className="flex gap-3">
+                              <div className={`p-2 rounded-full h-fit ${n.type === 'alert' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                                  {n.type === 'alert' ? <Briefcase size={18}/> : <Info size={18}/>}
+                              </div>
+                              <div>
+                                  <h4 className="font-bold text-slate-900 text-sm mb-1">{n.title}</h4>
+                                  <p className="text-slate-600 text-xs">{n.message}</p>
+                                  <span className="text-[10px] text-slate-400 mt-1 block">{new Date(n.createdAt).toLocaleString('ar-SA')}</span>
+                              </div>
+                          </div>
+                          <button 
+                              onClick={() => handleMarkRead(n.id)}
+                              className="text-xs bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-lg font-bold hover:bg-yellow-200 transition-colors shrink-0"
+                          >
+                              <CheckCircle size={14} className="inline ml-1"/> تم الاطلاع
+                          </button>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
+
       {/* Services Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {cards.filter(c => perms.includes(c.key)).map((card) => (
@@ -168,7 +206,7 @@ const StaffHome: React.FC = () => {
       {/* COMMUNICATION CENTER (NEWS & DIRECTIVES) */}
       {(news.length > 0 || directives.length > 0) && (
           <div className="mt-8 space-y-6">
-              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><BellRing className="text-amber-500"/> لوحة الإعلانات والتعاميم</h2>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Sparkles className="text-purple-500"/> لوحة الإعلانات والتعاميم</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* News Feed */}
                   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">

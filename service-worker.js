@@ -60,6 +60,8 @@ self.addEventListener('fetch', (event) => {
 });
 
 // --- PUSH NOTIFICATION HANDLER ---
+// This handles notifications pushed from a server (if we implement push server later)
+// or local notifications triggered via `registration.showNotification`
 self.addEventListener('push', function(event) {
   if (!(self.Notification && self.Notification.permission === 'granted')) {
     return;
@@ -79,12 +81,11 @@ self.addEventListener('push', function(event) {
   const title = data.title || "مدرسة عماد الدين زنكي";
   const options = {
     body: data.body,
-    icon: 'https://www.raed.net/img?id=1471924', // School Logo
+    icon: 'https://www.raed.net/img?id=1471924',
     badge: 'https://www.raed.net/img?id=1471924',
     vibrate: [100, 50, 100],
     data: {
-      dateOfArrival: Date.now(),
-      primaryKey: '2'
+      url: self.location.origin
     },
     actions: [
         {action: 'explore', title: 'عرض التفاصيل'},
@@ -96,9 +97,27 @@ self.addEventListener('push', function(event) {
   );
 });
 
+// --- NOTIFICATION CLICK HANDLER ---
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
+  
+  // 1. Focus existing window if available, or open new one
   event.waitUntil(
-    clients.openWindow('/')
+    clients.matchAll({
+      type: "window",
+      includeUncontrolled: true
+    }).then(function(clientList) {
+      if (clientList.length > 0) {
+        let client = clientList[0];
+        // If client is visible, focus it
+        if ('focus' in client) {
+            return client.focus();
+        }
+      }
+      // If no window is open, open a new one
+      if (clients.openWindow) {
+        return clients.openWindow('/');
+      }
+    })
   );
 });

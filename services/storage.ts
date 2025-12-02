@@ -714,5 +714,77 @@ export const getTopStudents = async (limit = 5) => { const { data, error } = awa
 export const createNotification = async (targetId: string, type: 'alert'|'info'|'success', title: string, message: string) => { 
     await supabase.from('notifications').insert({ target_user_id: targetId, type, title, message }); 
 };
+export const sendBatchNotifications = async (targetUserIds: string[], type: 'alert'|'info'|'success', title: string, message: string) => {
+    if (targetUserIds.length === 0) return;
+    const notifications = targetUserIds.map(id => ({
+        target_user_id: id,
+        type,
+        title,
+        message
+    }));
+    await supabase.from('notifications').insert(notifications);
+};
 export const getNotifications = async (targetId: string) => { const { data, error } = await supabase.from('notifications').select('*').eq('target_user_id', targetId).order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, targetUserId: n.target_user_id, title: n.title, message: n.message, isRead: n.is_read, type: n.type, createdAt: n.created_at })); };
 export const markNotificationRead = async (id: string) => { await supabase.from('notifications').update({ is_read: true }).eq('id', id); };
+
+// --- Advanced Notification Logic ---
+
+export const generateTeacherAbsenceSummary = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const { data: attendanceData } = await supabase.from('attendance').select('*').eq('date', today);
+    const users = await getStaffUsers();
+    
+    if (!attendanceData || attendanceData.length === 0) return { success: false, message: 'لا يوجد بيانات حضور لهذا اليوم بعد.' };
+
+    const notificationsToSend: any[] = [];
+
+    for (const teacher of users) {
+        // Find records for this teacher's assigned classes
+        let absentCount = 0;
+        const myAssignments = teacher.assignments || [];
+        
+        myAssignments.forEach(assignment => {
+            const classRecord = attendanceData.find((r: any) => r.grade === assignment.grade && r.class_name === assignment.className);
+            if (classRecord && classRecord.records) {
+                absentCount += classRecord.records.filter((stu: any) => stu.status === 'ABSENT').length;
+            }
+        });
+
+        if (absentCount > 0) {
+            notificationsToSend.push({
+                target_user_id: teacher.id,
+                type: 'info',
+                title: 'ملخص الغياب اليومي',
+                message: `تم رصد غياب ${absentCount} طالب في الفصول المسندة إليك اليوم (${today}).`
+            });
+        }
+    }
+
+    if (notificationsToSend.length > 0) {
+        await supabase.from('notifications').insert(notificationsToSend);
+        return { success: true, message: `تم إرسال ${notificationsToSend.length} إشعار للمعلمين.` };
+    }
+    return { success: true, message: 'لم يتم العثور على حالات غياب تستدعي التنبيه.' };
+};
+
+export const sendPendingReferralReminders = async () => {
+    const { data: pendingReferrals } = await supabase.from('referrals').select('*').eq('status', 'pending');
+    if (!pendingReferrals || pendingReferrals.length === 0) return { success: true, message: 'لا توجد إحالات معلقة.' };
+
+    const users = await getStaffUsers();
+    // Target counselors and deputy (those with 'students' or 'deputy' permission)
+    const targetStaff = users.filter(u => u.permissions?.includes('students') || u.permissions?.includes('deputy'));
+    
+    const notificationsToSend = targetStaff.map(staff => ({
+        target_user_id: staff.id,
+        type: 'alert',
+        title: 'تذكير: إحالات معلقة',
+        message: `يوجد ${pendingReferrals.length} إحالة جديدة بانتظار المعالجة. يرجى مراجعة صندوق الوارد.`
+    }));
+
+    if (notificationsToSend.length > 0) {
+        await supabase.from('notifications').insert(notificationsToSend);
+        return { success: true, message: `تم تنبيه ${notificationsToSend.length} من المختصين.` };
+    }
+    return { success: false, message: 'لم يتم العثور على موجهين/وكلاء لإرسال التنبيه.' };
+};

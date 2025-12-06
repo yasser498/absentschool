@@ -205,9 +205,14 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
 
   const handleCloseCase = async (student: Student, note: string) => {
       if(!confirm(`هل أنت متأكد من إغلاق حالة الطالب ${student.name}؟ لن يظهر في القائمة حتى يتغيب مجدداً.`)) return;
-      await resolveAbsenceAlert(student.studentId, 'closed', note);
-      alert("تم إغلاق الحالة ونقلها للمتابعة.");
-      fetchData();
+      try {
+          await resolveAbsenceAlert(student.studentId, 'closed', note);
+          alert("تم إغلاق الحالة ونقلها للمتابعة.");
+          fetchData();
+      } catch (error: any) {
+          console.error(error);
+          alert(`حدث خطأ أثناء إغلاق الحالة: ${error.message}`);
+      }
   };
 
   const handleReferToCounselor = async (student: Student, dates?: string[]) => {
@@ -242,8 +247,9 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
               onPrintAction(student, 'referral_print', dates);
           }
           fetchData();
-      } catch (error) {
-          alert("حدث خطأ أثناء التحويل.");
+      } catch (error: any) {
+          console.error(error);
+          alert(`حدث خطأ أثناء التحويل: ${error.message}`);
       }
   };
 

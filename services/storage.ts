@@ -576,13 +576,17 @@ export const getConsecutiveAbsences = async () => {
     });
     return alerts;
 };
-export const resolveAbsenceAlert = async (studentId: string, action: string, notes?: string) => { 
-    await supabase.from('risk_actions').insert({
+export const resolveAbsenceAlert = async (studentId: string, action: string, notes: string = '') => { 
+    const { error } = await supabase.from('risk_actions').insert({
         student_id: studentId,
         action_type: action,
         notes: notes,
         resolved_at: new Date().toISOString()
     });
+    if (error) {
+        console.error("Error inserting into risk_actions:", error);
+        throw new Error(error.message);
+    }
 };
 export const getRiskHistory = async () => {
     const { data, error } = await supabase.from('risk_actions').select('*').order('resolved_at', { ascending: false });

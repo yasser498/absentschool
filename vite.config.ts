@@ -13,7 +13,8 @@ export default defineConfig(({ mode }) => {
     define: {
       // This bridges the Vercel/System environment variable to the client-side code
       // We check for 'API_KEY' first, then fallback to 'VITE_GOOGLE_AI_KEY'
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_GOOGLE_AI_KEY),
+      // Fallback to empty string to ensure the code doesn't crash accessing undefined process.env
+      'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_GOOGLE_AI_KEY || ''),
     },
     build: {
       outDir: 'dist',

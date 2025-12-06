@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { Upload, CheckCircle, Calendar, User, FileText, Sparkles, AlertCircle, ChevronRight, Home, Paperclip, CalendarDays, Clock, ArrowRight } from 'lucide-react';
-import { getStudents, addRequest, uploadFile } from '../services/storage';
+import { Upload, CheckCircle, Calendar, User, FileText, Sparkles, AlertCircle, ChevronRight, Home, Paperclip, CalendarDays, Clock, ArrowRight, Loader2 } from 'lucide-react';
+import { getStudents, addRequest, uploadFile, generateSmartContent } from '../services/storage';
 import { Student, ExcuseRequest, RequestStatus } from '../types';
 import { GRADES } from '../constants';
 
@@ -14,6 +14,9 @@ const Submission: React.FC = () => {
   const [step, setStep] = useState(1); // 1: Form, 2: Success
   const [loading, setLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  
+  // AI State
+  const [isEnhancing, setIsEnhancing] = useState(false);
   
   // Lock states
   const [isStudentLocked, setIsStudentLocked] = useState(false);
@@ -100,6 +103,32 @@ const Submission: React.FC = () => {
       }
       setFile(selectedFile);
     }
+  };
+
+  // AI Writing Assistant
+  const handleSmartEnhance = async () => {
+      if (!details.trim()) {
+          alert("الرجاء كتابة تفاصيل العذر أولاً ليقوم المساعد الذكي بتحسينها.");
+          return;
+      }
+      
+      setIsEnhancing(true);
+      try {
+          const prompt = `
+            بصفتك مساعداً لغوياً، قم بإعادة صياغة عذر الغياب التالي ليكون رسمياً، مهذباً، وواضحاً لتقديمه لإدارة المدرسة:
+            "${details}"
+            
+            اكتب النص المعاد صياغته فقط بدون مقدمات.
+          `;
+          
+          // Use Flash model for speed since this is a simple text task
+          const enhancedText = await generateSmartContent(prompt, undefined, 'gemini-2.5-flash');
+          setDetails(enhancedText.trim());
+      } catch (e) {
+          alert("تعذر الاتصال بالمساعد الذكي.");
+      } finally {
+          setIsEnhancing(false);
+      }
   };
 
   const getDatesInRange = (startDateStr: string, endDateStr: string) => {
@@ -302,8 +331,19 @@ const Submission: React.FC = () => {
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold text-slate-500 mb-1.5 block">تفاصيل إضافية (اختياري)</label>
-                            <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={2} className="w-full p-3 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-100 resize-none" placeholder="أي ملاحظات إضافية..."></textarea>
+                            <div className="flex justify-between items-end mb-1.5">
+                                <label className="text-xs font-bold text-slate-500 block">تفاصيل إضافية (اختياري)</label>
+                                <button 
+                                    type="button" 
+                                    onClick={handleSmartEnhance}
+                                    disabled={isEnhancing || !details}
+                                    className="text-[10px] bg-purple-50 text-purple-700 px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-purple-100 transition-colors disabled:opacity-50"
+                                >
+                                    {isEnhancing ? <Loader2 size={12} className="animate-spin"/> : <Sparkles size={12}/>} 
+                                    تحسين الصياغة بالذكاء الاصطناعي
+                                </button>
+                            </div>
+                            <textarea value={details} onChange={(e) => setDetails(e.target.value)} rows={2} className="w-full p-3 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-100 resize-none" placeholder="مثال: كان يعاني من ارتفاع في الحرارة..."></textarea>
                         </div>
                     </div>
                 </div>

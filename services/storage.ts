@@ -35,17 +35,25 @@ export const getAIConfig = (): AIConfig => {
   return { provider: 'google', apiKey, model: 'gemini-3-pro-preview' };
 };
 
-export const generateSmartContent = async (prompt: string, systemInstruction?: string): Promise<string> => {
+export const generateSmartContent = async (prompt: string, systemInstruction?: string, model: string = 'gemini-3-pro-preview'): Promise<string> => {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    // Adjust config based on model
+    const config: any = { systemInstruction };
+    
+    // Thinking config is only for 2.5 series or 3-pro if needed for deep reasoning
+    // For simple text tasks using Flash, we might not need thinkingBudget or set it to 0
+    if (model.includes('flash')) {
+        config.thinkingConfig = { thinkingBudget: 0 }; // Disable thinking for speed
+    } else {
+        config.thinkingConfig = { thinkingBudget: 2048 }; // Default thinking for Pro
+    }
+
     const response = await ai.models.generateContent({ 
-        model: 'gemini-3-pro-preview', 
+        model: model, 
         contents: prompt, 
-        config: { 
-            systemInstruction,
-            // Adjust thinking budget to be efficient
-            thinkingConfig: { thinkingBudget: 2048 }
-        } 
+        config
     });
     return response.text || "";
   } catch (error: any) { 
@@ -306,8 +314,7 @@ export const analyzeSentiment = async (text: string): Promise<'positive' | 'nega
     } catch (e) { return 'neutral'; }
 };
 
-// --- CORE CRUD ---
-// ... (Mappers unchanged) ...
+// ... (Rest of storage.ts remains unchanged, providing data access functions)
 const mapStudentFromDB = (s: any): Student => ({ id: s.id, name: s.name, studentId: s.student_id, grade: s.grade, className: s.class_name, phone: s.phone || '' });
 const mapStudentToDB = (s: Student) => ({ name: s.name, student_id: s.studentId, grade: s.grade, class_name: s.className, phone: s.phone });
 const mapRequestFromDB = (r: any): ExcuseRequest => ({ id: r.id, studentId: r.student_id, studentName: r.student_name, grade: r.grade, className: r.class_name, date: r.date, reason: r.reason, details: r.details, attachmentName: r.attachment_name, attachmentUrl: r.attachment_url, status: r.status as RequestStatus, submissionDate: r.submission_date });

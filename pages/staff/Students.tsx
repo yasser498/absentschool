@@ -6,7 +6,7 @@ import {
   ShieldAlert, Printer, Plus, Inbox, FileText, LayoutGrid, 
   BookOpen, MessageSquare, AlertTriangle, Calendar, Loader2,
   Clock, Activity, ClipboardList, Send, Check, X, Edit, Trash2,
-  Archive, HeartHandshake, Filter, ArrowLeft, Copy, MessageCircle, Sparkles, BrainCircuit, FileSignature
+  Archive, HeartHandshake, Filter, ArrowLeft, Copy, MessageCircle, Sparkles
 } from 'lucide-react';
 import { 
   getStudents, getReferrals, getGuidanceSessions, getConsecutiveAbsences,
@@ -54,17 +54,13 @@ const StaffStudents: React.FC = () => {
 
   // Student Detail Modal State
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [modalTab, setModalTab] = useState<'info'|'history'|'behavior'|'observations'|'sessions'|'ai_analysis'>('info');
+  const [modalTab, setModalTab] = useState<'info'|'history'|'behavior'|'sessions'>('info');
   const [studentDetails, setStudentDetails] = useState<{
       history: { date: string, status: AttendanceStatus }[],
       behavior: BehaviorRecord[],
       observations: StudentObservation[]
   }>({ history: [], behavior: [], observations: [] });
   const [loadingDetails, setLoadingDetails] = useState(false);
-
-  // AI Analysis State
-  const [aiOverview, setAiOverview] = useState('');
-  const [isGeneratingOverview, setIsGeneratingOverview] = useState(false);
 
   // Session Form State
   const [showSessionForm, setShowSessionForm] = useState(false);
@@ -73,9 +69,6 @@ const StaffStudents: React.FC = () => {
   const [sessionRecs, setSessionRecs] = useState('');
   const [sessionType, setSessionType] = useState<'individual' | 'group' | 'parent_meeting'>('individual');
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
-
-  // Printing State
-  const [printMode, setPrintMode] = useState<'none' | 'student_overview'>('none');
 
   // Referral Action State
   const [processingReferralId, setProcessingReferralId] = useState<string | null>(null);
@@ -116,7 +109,6 @@ const StaffStudents: React.FC = () => {
   const handleOpenStudent = async (student: Student) => {
       setSelectedStudent(student);
       setModalTab('info');
-      setAiOverview(''); // Reset AI text
       setLoadingDetails(true);
       try {
           const [h, b, o] = await Promise.all([
@@ -127,55 +119,6 @@ const StaffStudents: React.FC = () => {
           setStudentDetails({ history: h, behavior: b, observations: o });
       } catch(e) { console.error(e); }
       finally { setLoadingDetails(false); }
-  };
-
-  const handleGenerateOverview = async () => {
-      if(!selectedStudent) return;
-      setIsGeneratingOverview(true);
-      try {
-          const absents = studentDetails.history.filter(h=>h.status==='ABSENT').length;
-          const lates = studentDetails.history.filter(h=>h.status==='LATE').length;
-          const violations = studentDetails.behavior.map(b=>b.violationName).join(' - ');
-          
-          // Separate Observations
-          const positiveObs = studentDetails.observations
-              .filter(o => o.type === 'positive')
-              .map(o => o.content)
-              .join(' - ');
-          
-          const generalObs = studentDetails.observations
-              .filter(o => o.type !== 'positive')
-              .map(o => o.content)
-              .join(' - ');
-
-          const prompt = `
-            بصفتك مستشاراً تربويًا وموجه طلابي خبير، قم بإعداد "تقرير حالة تربوي وتوجيهي" رسمي ومفصل للطالب: ${selectedStudent.name} (${selectedStudent.grade}).
-            
-            تحليل البيانات المتوفرة في السجل:
-            1. الانضباط والحضور: (غياب: ${absents} أيام، تأخر: ${lates} مرات).
-            2. نقاط التميز والسلوك الإيجابي: ${positiveObs || 'لا يوجد سجلات تميز مسجلة حالياً'}.
-            3. المخالفات السلوكية: ${violations || 'سجل نظيف من المخالفات'}.
-            4. ملاحظات المعلمين الأخرى: ${generalObs || 'لا يوجد'}.
-
-            المطلوب في التقرير (موجه لولي الأمر وإدارة المدرسة):
-            - مقدمة تربوية مهنية.
-            - إبراز "نقاط القوة والتميز" لدى الطالب أولاً بناءً على السلوك الإيجابي (عزز هذا الجانب).
-            - توضيح "الجوانب التي تحتاج إلى تحسين" (الغياب أو المخالفات إن وجدت) بأسلوب تربوي ناصح.
-            - خطة توجيهية وتوصيات عملية لولي الأمر للمتابعة.
-            - خاتمة إيجابية ومشجعة.
-            
-            الصياغة: رسمية، مهنية، ومتوازنة بين التحفيز والتوجيه.
-          `;
-          
-          const result = await generateSmartContent(prompt);
-          setAiOverview(result);
-      } catch(e) { alert("حدث خطأ أثناء التوليد"); }
-      finally { setIsGeneratingOverview(false); }
-  };
-
-  const handlePrintOverview = () => {
-      setPrintMode('student_overview');
-      setTimeout(() => { window.print(); setPrintMode('none'); }, 300);
   };
 
   const handleGeneratePlan = async () => {
@@ -222,13 +165,6 @@ const StaffStudents: React.FC = () => {
       alert("تمت الإفادة وإغلاق الإحالة.");
   };
 
-  // Helper to format phone for display and QR
-  const formatPhone = (phone: string) => {
-      if (!phone) return '';
-      // Replace 966, +966, 00966 with 0
-      return phone.replace(/^(966|\+966|00966)/, '0');
-  };
-
   // Derived Data
   const dailySessions = useMemo(() => sessions.filter(s => s.date === today), [sessions, today]);
   const pendingReferrals = useMemo(() => referrals.filter(r => r.status === 'pending'), [referrals]);
@@ -254,39 +190,8 @@ const StaffStudents: React.FC = () => {
   return (
     <div className="space-y-6 pb-20 animate-fade-in relative">
         
-        {/* Print Area */}
-        <div id="print-area" className="hidden" dir="rtl">
-            {printMode === 'student_overview' && selectedStudent && (
-                <div className="print-page-a4">
-                    <OfficialCounselorHeader title="تقرير تربوي وتوجيهي شامل" date={new Date().toLocaleDateString('ar-SA')} />
-                    
-                    <div className="mb-6 border-b-2 border-black pb-4">
-                        <h2 className="text-xl font-bold mb-4">بيانات الطالب</h2>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <p><strong>الاسم:</strong> {selectedStudent.name}</p>
-                            <p><strong>الصف:</strong> {selectedStudent.grade} - {selectedStudent.className}</p>
-                            <p><strong>رقم الهوية:</strong> {selectedStudent.studentId}</p>
-                            <p><strong>رقم ولي الأمر:</strong> {formatPhone(selectedStudent.phone)}</p>
-                        </div>
-                    </div>
-
-                    <div className="mb-6">
-                        <h2 className="text-xl font-bold mb-4 bg-gray-100 p-2 border border-black">التقرير التحليلي (السلوك والمواظبة والتميز)</h2>
-                        <div className="text-justify leading-loose whitespace-pre-line text-sm font-medium">
-                            {aiOverview}
-                        </div>
-                    </div>
-
-                    <div className="mt-16 flex justify-between px-10">
-                        <div className="text-center"><p className="font-bold mb-8">الموجه الطلابي</p><p>{currentUser?.name}</p></div>
-                        <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
-                    </div>
-                </div>
-            )}
-        </div>
-
         {/* Header */}
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-3">
                 <div className="bg-purple-50 p-3 rounded-2xl text-purple-600">
                     {isDirectoryMode ? <Users size={28}/> : <HeartHandshake size={28}/>}
@@ -315,7 +220,7 @@ const StaffStudents: React.FC = () => {
 
         {/* --- DASHBOARD VIEW --- */}
         {!isDirectoryMode && activeView === 'dashboard' && (
-            <div className="space-y-6 animate-fade-in no-print">
+            <div className="space-y-6 animate-fade-in">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="bg-white p-5 rounded-3xl border border-purple-100 shadow-sm text-center">
                         <p className="text-xs font-bold text-slate-400 uppercase">جلسات اليوم</p>
@@ -383,7 +288,7 @@ const StaffStudents: React.FC = () => {
 
         {/* --- DIRECTORY VIEW --- */}
         {(isDirectoryMode || activeView === 'directory') && (
-            <div className="space-y-6 animate-fade-in no-print">
+            <div className="space-y-6 animate-fade-in">
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row gap-4 shadow-sm">
                     <div className="relative flex-1">
                         <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20}/>
@@ -415,7 +320,7 @@ const StaffStudents: React.FC = () => {
                                             <>
                                             <button onClick={() => copyToClipboard(student.phone)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-slate-100 hover:text-slate-600"><Copy size={16}/></button>
                                             <button onClick={() => openWhatsApp(student.phone)} className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"><MessageCircle size={16}/></button>
-                                            <a href={`tel:${formatPhone(student.phone)}`} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"><Phone size={16}/></a>
+                                            <a href={`tel:${student.phone}`} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"><Phone size={16}/></a>
                                             </>
                                         )}
                                     </div>
@@ -429,7 +334,7 @@ const StaffStudents: React.FC = () => {
 
         {/* --- INBOX VIEW --- */}
         {!isDirectoryMode && activeView === 'inbox' && (
-            <div className="space-y-6 animate-fade-in max-w-4xl mx-auto no-print">
+            <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Inbox className="text-blue-600"/> الإحالات الواردة</h2>
                 {activeReferrals.concat(pendingReferrals).length === 0 ? <p className="text-slate-400 text-center py-10">لا توجد إحالات نشطة.</p> : 
                     activeReferrals.concat(pendingReferrals).map(ref => (
@@ -475,7 +380,7 @@ const StaffStudents: React.FC = () => {
 
         {/* --- STUDENT MODAL --- */}
         {selectedStudent && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in no-print">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
                 <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
                     <div className="p-6 bg-slate-900 text-white flex justify-between items-start shrink-0">
                         <div className="flex items-center gap-4">
@@ -493,15 +398,8 @@ const StaffStudents: React.FC = () => {
                     </div>
                     
                     <div className="flex border-b border-slate-100 bg-slate-50 px-6 gap-6 overflow-x-auto">
-                        {[
-                            {k:'info', l:'المعلومات', i:User}, 
-                            {k:'history', l:'الغياب', i:Clock}, 
-                            {k:'behavior', l:'السلوك', i:ShieldAlert}, 
-                            {k:'observations', l:'الملاحظات', i:FileText},
-                            {k:'sessions', l:'الجلسات', i:ClipboardList},
-                            {k:'ai_analysis', l:'التحليل الذكي', i:BrainCircuit}
-                        ].map(t => (
-                            <button key={t.k} onClick={() => setModalTab(t.k as any)} className={`py-4 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors whitespace-nowrap ${modalTab === t.k ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                        {[{k:'info', l:'المعلومات', i:User}, {k:'history', l:'الغياب', i:Clock}, {k:'behavior', l:'السلوك', i:ShieldAlert}, {k:'sessions', l:'الجلسات', i:ClipboardList}].map(t => (
+                            <button key={t.k} onClick={() => setModalTab(t.k as any)} className={`py-4 text-sm font-bold flex items-center gap-2 border-b-2 transition-colors ${modalTab === t.k ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                                 <t.i size={16}/> {t.l}
                             </button>
                         ))}
@@ -513,24 +411,12 @@ const StaffStudents: React.FC = () => {
                                 {modalTab === 'info' && (
                                     <div className="space-y-6 text-center">
                                         <div className="bg-slate-50 p-8 rounded-3xl border border-slate-100 inline-block w-full max-w-sm">
-                                            <p className="text-slate-400 text-xs font-bold uppercase mb-4">رقم ولي الأمر (مسح للاتصال)</p>
-                                            
-                                            {/* Phone QR Code */}
-                                            {selectedStudent.phone ? (
-                                                <div className="flex flex-col items-center">
-                                                    <div className="bg-white p-3 rounded-2xl shadow-sm mb-4 border border-slate-200">
-                                                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=tel:${formatPhone(selectedStudent.phone)}`} alt="QR" className="w-32 h-32"/>
-                                                    </div>
-                                                    <p className="text-3xl font-mono font-bold text-slate-800 mb-6">{formatPhone(selectedStudent.phone)}</p>
-                                                    <div className="grid grid-cols-2 gap-3 w-full">
-                                                        <a href={`tel:${formatPhone(selectedStudent.phone)}`} className="bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700"><Phone size={18}/> اتصال</a>
-                                                        <button onClick={() => openWhatsApp(selectedStudent.phone)} className="bg-emerald-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700"><MessageCircle size={18}/> واتساب</button>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="text-slate-400 py-6">
-                                                    <Phone size={40} className="mx-auto mb-2 opacity-20"/>
-                                                    <p>لا يوجد رقم مسجل</p>
+                                            <p className="text-slate-400 text-xs font-bold uppercase mb-2">رقم ولي الأمر</p>
+                                            <p className="text-3xl font-mono font-bold text-slate-800 mb-6">{selectedStudent.phone || '---'}</p>
+                                            {selectedStudent.phone && (
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <button onClick={() => window.location.href=`tel:${selectedStudent.phone}`} className="bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700"><Phone size={18}/> اتصال</button>
+                                                    <button onClick={() => openWhatsApp(selectedStudent.phone)} className="bg-emerald-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700"><MessageCircle size={18}/> واتساب</button>
                                                 </div>
                                             )}
                                         </div>
@@ -562,48 +448,6 @@ const StaffStudents: React.FC = () => {
                                                 <p className="text-sm text-slate-600">{b.actionTaken}</p>
                                             </div>
                                         ))}
-                                    </div>
-                                )}
-
-                                {modalTab === 'observations' && (
-                                    <div className="space-y-4">
-                                        {studentDetails.observations.length === 0 ? <p className="text-center text-slate-400 py-10">لا يوجد ملاحظات.</p> : studentDetails.observations.map(obs => (
-                                            <div key={obs.id} className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <span className={`text-[10px] px-2 py-1 rounded font-bold ${obs.type==='positive' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{obs.type === 'positive' ? 'إيجابي' : 'ملاحظة'}</span>
-                                                    <span className="text-xs text-slate-400">{obs.date}</span>
-                                                </div>
-                                                <p className="text-sm text-slate-700">{obs.content}</p>
-                                                <p className="text-xs text-slate-400 mt-2">بواسطة: {obs.staffName}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {modalTab === 'ai_analysis' && (
-                                    <div className="space-y-6">
-                                        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-2xl border border-indigo-100 text-center">
-                                            <BrainCircuit className="mx-auto text-purple-600 mb-3" size={32}/>
-                                            <h3 className="text-lg font-bold text-slate-800 mb-2">التحليل التربوي الذكي</h3>
-                                            <p className="text-sm text-slate-500 mb-6">توليد تقرير شامل للحالة (غياب، سلوك، ملاحظات) وتوصيات عملية.</p>
-                                            
-                                            {!aiOverview ? (
-                                                <button onClick={handleGenerateOverview} disabled={isGeneratingOverview} className="bg-purple-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-purple-700 transition-all flex items-center justify-center gap-2 mx-auto">
-                                                    {isGeneratingOverview ? <Loader2 className="animate-spin"/> : <Sparkles size={18}/>}
-                                                    توليد تقرير شامل
-                                                </button>
-                                            ) : (
-                                                <div className="text-left bg-white p-6 rounded-xl shadow-sm border border-slate-100 text-sm leading-loose whitespace-pre-line animate-fade-in relative">
-                                                    {aiOverview}
-                                                    <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
-                                                        <button onClick={() => setAiOverview('')} className="text-slate-400 hover:text-slate-600 text-xs font-bold">إعادة</button>
-                                                        <button onClick={handlePrintOverview} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-slate-900">
-                                                            <Printer size={14}/> طباعة رسمي
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
                                     </div>
                                 )}
 

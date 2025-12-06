@@ -1,3 +1,4 @@
+
 import { supabase } from '../supabaseClient';
 import { 
   Appointment, AppointmentSlot, 
@@ -29,44 +30,21 @@ export const invalidateCache = (key: string) => {
 export interface AIConfig { provider: 'google' | 'openai_compatible'; apiKey: string; baseUrl?: string; model: string; }
 
 export const getAIConfig = (): AIConfig => {
-  const stored = localStorage.getItem('ozr_ai_config');
-  if (stored) return JSON.parse(stored);
-  
-  let apiKey = '';
-  try {
-    // @ts-ignore
-    if (typeof process !== 'undefined' && process.env?.API_KEY) {
-        // @ts-ignore
-        apiKey = process.env.API_KEY;
-    }
-  } catch (e) { console.debug('process.env not available'); }
-
-  if (!apiKey) {
-    try {
-        // @ts-ignore
-        if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_AI_KEY) {
-            // @ts-ignore
-            apiKey = import.meta.env.VITE_GOOGLE_AI_KEY;
-        }
-    } catch (e) { console.debug('import.meta.env not available'); }
-  }
-
+  // Directly use the environment variable as per system requirements
+  const apiKey = process.env.API_KEY || '';
   return { provider: 'google', apiKey, model: 'gemini-3-pro-preview' };
 };
 
 export const generateSmartContent = async (prompt: string, systemInstruction?: string): Promise<string> => {
-  const config = getAIConfig();
-  if (!config.apiKey) return "عفواً، لم يتم ضبط مفتاح الذكاء الاصطناعي (API Key).";
   try {
-    const ai = new GoogleGenAI({ apiKey: config.apiKey });
-    // Use Thinking Mode for complex generation
-    // We strictly use gemini-3-pro-preview with thinkingBudget: 32768 for complex reasoning tasks.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({ 
         model: 'gemini-3-pro-preview', 
         contents: prompt, 
         config: { 
             systemInstruction,
-            thinkingConfig: { thinkingBudget: 32768 }
+            // Adjust thinking budget to be efficient
+            thinkingConfig: { thinkingBudget: 2048 }
         } 
     });
     return response.text || "";
@@ -313,10 +291,8 @@ export const generateUserSpecificBotContext = async (): Promise<{role: string, c
 
 export const analyzeSentiment = async (text: string): Promise<'positive' | 'negative' | 'neutral'> => {
     try {
-        const config = getAIConfig();
-        if (!config.apiKey) return 'neutral';
-        // Use Flash for simple sentiment analysis to keep it fast and low cost
-        const ai = new GoogleGenAI({ apiKey: config.apiKey });
+        // Use Flash for simple sentiment analysis
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `Analyze the sentiment of this text (Student Report). Return ONLY one word: 'positive', 'negative', or 'neutral'. Text: "${text}"`
@@ -378,8 +354,6 @@ export const uploadFile = async (file: File): Promise<string | null> => {
 
   } catch (err: any) {
     console.warn('Storage upload failed, attempting fallback to Base64:', err.message);
-    // Fallback: Convert to Base64 data URI
-    // This allows the app to work even if the 'excuses' bucket hasn't been created in Supabase yet.
     try {
         return await fileToBase64(file);
     } catch (e) {
@@ -393,13 +367,8 @@ export const getStudents = async (force = false) => { const { data, error } = aw
 export const getStudentsSync = () => null;
 export const getStudentByCivilId = async (id: string) => { const { data, error } = await supabase.from('students').select('*').eq('student_id', id).single(); if (error) return null; return mapStudentFromDB(data); };
 
-// New Function: Search students by phone number
 export const getStudentsByPhone = async (phone: string): Promise<Student[]> => {
-    // Normalize input (remove spaces, dashes)
     let cleanPhone = phone.replace(/\s+/g, '').replace(/-/g, '');
-    
-    // Create variations to check against DB (stored as 05... usually)
-    // 1. If starts with 966, try replacing with 0
     let variations = [cleanPhone];
     if (cleanPhone.startsWith('966')) {
         variations.push('0' + cleanPhone.substring(3));
@@ -459,7 +428,6 @@ export const authenticateStaff = async (passcode: string): Promise<StaffUser | u
 export const getAvailableClassesForGrade = async (grade: string) => { const { data } = await supabase.from('students').select('class_name').eq('grade', grade); if (!data) return []; return Array.from(new Set(data.map((s: any) => s.class_name))).sort(); };
 
 export const saveAttendanceRecord = async (record: AttendanceRecord) => { 
-    // 1. Save or Update the Record
     const { data: existing } = await supabase.from('attendance').select('id').eq('date', record.date).eq('grade', record.grade).eq('class_name', record.className).single();
     if (existing) {
         const { error } = await supabase.from('attendance').update(mapAttendanceToDB(record)).eq('id', existing.id);
@@ -469,16 +437,14 @@ export const saveAttendanceRecord = async (record: AttendanceRecord) => {
         if (error) throw new Error(error.message);
     }
 
-    // 2. TRIGGER REAL-TIME NOTIFICATIONS
-    // We iterate through the student records to check for Absence or Lateness
     const notificationBatch: any[] = [];
     
     record.records.forEach(stu => {
-        if (!stu.studentId) return; // Skip if invalid ID to prevent DB errors
+        if (!stu.studentId) return; 
 
         if (stu.status === AttendanceStatus.ABSENT) {
             notificationBatch.push({
-                target_user_id: stu.studentId, // We use studentId to target the parent
+                target_user_id: stu.studentId, 
                 type: 'alert',
                 title: 'تنبيه غياب',
                 message: `نحيطكم علماً بأن الطالب ${stu.studentName} تغيب عن المدرسة بتاريخ ${record.date}. يرجى تقديم عذر عبر البوابة.`
@@ -493,9 +459,7 @@ export const saveAttendanceRecord = async (record: AttendanceRecord) => {
         }
     });
 
-    // Send notifications in bulk if there are any
     if (notificationBatch.length > 0) {
-        // Warning: This could be large for a whole school, but for a class it's fine.
         const { error } = await supabase.from('notifications').insert(notificationBatch);
         if (error) console.error("Failed to send attendance notifications:", error);
     }
@@ -594,7 +558,6 @@ export const getRiskHistory = async () => {
     const { data, error } = await supabase.from('risk_actions').select('*').order('resolved_at', { ascending: false });
     if (error) return [];
     
-    // Enrich with student data names if possible (doing a client-side join for simplicity here as we load students anyway)
     const students = await getStudents();
     return data.map((item: any) => {
         const student = students.find(s => s.studentId === item.student_id);
@@ -651,7 +614,6 @@ export const getAdminInsights = async (targetRole?: 'deputy' | 'counselor' | 'te
 export const sendAdminInsight = async (targetRole: 'deputy' | 'counselor' | 'teachers', content: string) => {
     const { error } = await supabase.from('admin_insights').insert({ target_role: targetRole, content });
     if (error) throw new Error(error.message);
-    // You might want to notify all staff of a certain role here, but that requires selecting all their IDs.
 };
 export const clearAdminInsights = async () => { await supabase.from('admin_insights').delete().neq('id', '0'); };
 export const addReferral = async (referral: Referral) => { const { error } = await supabase.from('referrals').insert(mapReferralToDB(referral)); if (error) throw new Error(error.message); };
@@ -706,7 +668,6 @@ export const completeExitPermission = async (id: string) => {
     const { error } = await supabase.from('exit_permissions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id); 
     if (error) throw new Error(error.message); 
     
-    // Notify Parent
     const { data: perm } = await supabase.from('exit_permissions').select('student_id, student_name').eq('id', id).single();
     if (perm) {
         await createNotification(perm.student_id, 'info', 'خروج طالب', `تم تسجيل خروج الطالب ${perm.student_name} من البوابة الآن.`);
@@ -716,7 +677,6 @@ export const completeExitPermission = async (id: string) => {
 export const getAvailableSlots = async (date?: string) => { let query = supabase.from('appointment_slots').select('*'); if (date) query = query.eq('date', date); else { const today = new Date().toISOString().split('T')[0]; query = query.gte('date', today); } const { data, error } = await query.order('date', { ascending: true }).order('start_time', { ascending: true }); if (error) return []; return data.map((s: any) => ({ id: s.id, date: s.date, startTime: s.start_time, endTime: s.end_time, maxCapacity: s.max_capacity, currentBookings: s.current_bookings })); };
 export const generateDefaultAppointmentSlots = async (date: string) => { 
     const slots = []; 
-    // Updated Logic: 8:00 AM to 11:00 AM, 30 min intervals, Capacity 3
     const startHour = 8; 
     const startMinute = 0; 
     const endHour = 11; 
@@ -742,7 +702,6 @@ export const getDailyAppointments = async (date?: string) => {
     const { data, error } = await query.order('created_at', { ascending: false }); 
     if (error) return []; 
     
-    // Map with type safety for joined slot
     const mapped = data.map((a: any) => ({ 
         id: a.id, 
         slotId: a.slot_id, 
@@ -752,7 +711,7 @@ export const getDailyAppointments = async (date?: string) => {
         parentCivilId: a.parent_civil_id, 
         visitReason: a.visit_reason, 
         status: a.status, 
-        arrivedAt: a.arrived_at, // Ensure this field is mapped
+        arrivedAt: a.arrived_at, 
         createdAt: a.created_at, 
         slot: a.slot ? { 
             id: a.slot.id, 
@@ -768,7 +727,6 @@ export const getDailyAppointments = async (date?: string) => {
     return mapped; 
 };
 export const checkInVisitor = async (appointmentId: string) => { 
-    // Update status AND arrived_at timestamp
     const { error } = await supabase.from('appointments').update({ 
         status: 'completed', 
         arrived_at: new Date().toISOString() 
@@ -776,7 +734,6 @@ export const checkInVisitor = async (appointmentId: string) => {
     
     if (error) throw new Error(error.message); 
     
-    // Notify Parent/Student (using studentId for targeting)
     const { data: appt } = await supabase.from('appointments').select('student_id, parent_name').eq('id', appointmentId).single();
     if(appt) {
         await createNotification(appt.student_id, 'success', 'تسجيل دخول', `تم تسجيل دخول ولي الأمر ${appt.parent_name} للمدرسة.`);
@@ -788,10 +745,7 @@ export const addSchoolNews = async (news: Omit<SchoolNews, 'id' | 'createdAt'>) 
     const { error } = await supabase.from('news').insert({ title: news.title, content: news.content, author: news.author, is_urgent: news.isUrgent }); 
     if (error) throw new Error(error.message); 
     
-    // Auto-Notify for Urgent News
     if (news.isUrgent) {
-        // Warning: This creates a notification row without a specific target, meaning it's a "Global" alert.
-        // A smarter way is to have a special target like "ALL" which the client listens to.
         await createNotification('ALL', 'alert', 'خبر عاجل', `${news.title}: ${news.content}`);
     }
 };
@@ -820,9 +774,7 @@ export const sendBatchNotifications = async (targetUserIds: string[], type: 'ale
 export const getNotifications = async (targetId: string) => { const { data, error } = await supabase.from('notifications').select('*').eq('target_user_id', targetId).order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, targetUserId: n.target_user_id, title: n.title, message: n.message, isRead: n.is_read, type: n.type, createdAt: n.created_at })); };
 export const markNotificationRead = async (id: string) => { await supabase.from('notifications').update({ is_read: true }).eq('id', id); };
 
-// --- NEW FUNCTION: CHECK PARENT REGISTRATION ---
 export const checkParentRegistration = async (parentCivilId: string): Promise<boolean> => {
-    // Check if this parent ID exists in the parent_links table
     const { data, error } = await supabase
         .from('parent_links')
         .select('id')
@@ -837,8 +789,6 @@ export const checkParentRegistration = async (parentCivilId: string): Promise<bo
     return data && data.length > 0;
 };
 
-// --- Advanced Notification Logic ---
-
 export const generateTeacherAbsenceSummary = async () => {
     const today = new Date().toISOString().split('T')[0];
     const { data: attendanceData } = await supabase.from('attendance').select('*').eq('date', today);
@@ -849,7 +799,6 @@ export const generateTeacherAbsenceSummary = async () => {
     const notificationsToSend: any[] = [];
 
     for (const teacher of users) {
-        // Find records for this teacher's assigned classes
         let absentCount = 0;
         const myAssignments = teacher.assignments || [];
         
@@ -882,7 +831,6 @@ export const sendPendingReferralReminders = async () => {
     if (!pendingReferrals || pendingReferrals.length === 0) return { success: true, message: 'لا توجد إحالات معلقة.' };
 
     const users = await getStaffUsers();
-    // Target counselors and deputy (those with 'students' or 'deputy' permission)
     const targetStaff = users.filter(u => u.permissions?.includes('students') || u.permissions?.includes('deputy'));
     
     const notificationsToSend = targetStaff.map(staff => ({

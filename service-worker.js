@@ -1,6 +1,6 @@
 
 // Service Worker for PWA & Push Notifications
-const CACHE_NAME = 'ozr-pwa-v2';
+const CACHE_NAME = 'ozr-pwa-v3';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -60,8 +60,6 @@ self.addEventListener('fetch', (event) => {
 });
 
 // --- PUSH NOTIFICATION HANDLER ---
-// This handles notifications pushed from a server (if we implement push server later)
-// or local notifications triggered via `registration.showNotification`
 self.addEventListener('push', function(event) {
   if (!(self.Notification && self.Notification.permission === 'granted')) {
     return;
@@ -81,15 +79,17 @@ self.addEventListener('push', function(event) {
   const title = data.title || "مدرسة عماد الدين زنكي";
   const options = {
     body: data.body,
-    icon: 'https://www.raed.net/img?id=1471924',
+    icon: 'https://www.raed.net/img?id=1471924', // Use absolute URL for icons
     badge: 'https://www.raed.net/img?id=1471924',
     vibrate: [200, 100, 200],
-    requireInteraction: true,
+    requireInteraction: true, // Important for mobile to keep notification visible
+    tag: 'renotify', // Replace old notifications
+    renotify: true,
     data: {
       url: self.location.origin
     },
     actions: [
-        {action: 'explore', title: 'عرض التفاصيل'},
+        {action: 'open', title: 'فتح التطبيق'},
     ]
   };
 
@@ -102,7 +102,7 @@ self.addEventListener('push', function(event) {
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   
-  // This looks to see if the current window is already open and focuses if it is
+  // Open the app and navigate to root
   event.waitUntil(
     clients.matchAll({
       type: "window",

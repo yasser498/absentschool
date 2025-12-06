@@ -820,6 +820,23 @@ export const sendBatchNotifications = async (targetUserIds: string[], type: 'ale
 export const getNotifications = async (targetId: string) => { const { data, error } = await supabase.from('notifications').select('*').eq('target_user_id', targetId).order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, targetUserId: n.target_user_id, title: n.title, message: n.message, isRead: n.is_read, type: n.type, createdAt: n.created_at })); };
 export const markNotificationRead = async (id: string) => { await supabase.from('notifications').update({ is_read: true }).eq('id', id); };
 
+// --- NEW FUNCTION: CHECK PARENT REGISTRATION ---
+export const checkParentRegistration = async (parentCivilId: string): Promise<boolean> => {
+    // Check if this parent ID exists in the parent_links table
+    const { data, error } = await supabase
+        .from('parent_links')
+        .select('id')
+        .eq('parent_civil_id', parentCivilId)
+        .limit(1);
+    
+    if (error) {
+        console.error("Error checking parent registration:", error);
+        return false;
+    }
+    
+    return data && data.length > 0;
+};
+
 // --- Advanced Notification Logic ---
 
 export const generateTeacherAbsenceSummary = async () => {

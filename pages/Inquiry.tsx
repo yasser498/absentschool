@@ -4,14 +4,15 @@ import {
   Search, User, School, Copy, Check, CalendarDays, AlertCircle, Loader2, 
   FileText, ShieldAlert, Star, MessageSquare, Send, CheckCircle, Clock, Plus, Users, Bell, 
   LogOut, ChevronRight, ArrowLeft, Activity, ChevronLeft, Archive, AlertTriangle, 
-  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer, LogOut as ExitIcon, Calendar, Medal, Trophy, Phone, ArrowRight, Info, BellRing, MapPin, ScanLine, FilePlus
+  Newspaper, CreditCard, X, Sparkles, CalendarCheck, QrCode, Paperclip, Printer, LogOut as ExitIcon, Calendar, Medal, Trophy, Phone, ArrowRight, Info, BellRing, MapPin, ScanLine, FilePlus, Zap
 } from 'lucide-react';
 import { 
   getStudentByCivilId, getRequestsByStudentId, getStudentAttendanceHistory, 
   getBehaviorRecords, getStudentObservations, acknowledgeBehavior, 
   acknowledgeObservation, getParentChildren, linkParentToStudent, 
   getNotifications, markNotificationRead, getStudentPoints, getSchoolNews, generateSmartStudentReport,
-  getAvailableSlots, bookAppointment, getMyAppointments, getMyExitPermissions, getStudentsByPhone
+  getAvailableSlots, bookAppointment, getMyAppointments, getMyExitPermissions, getStudentsByPhone,
+  checkParentRegistration // Import new function
 } from '../services/storage';
 import { subscribeToPushNotifications, checkPushPermission } from '../services/pushService';
 import { 
@@ -29,6 +30,8 @@ const Inquiry: React.FC = () => {
   const [parentCivilId, setParentCivilId] = useState(localStorage.getItem('ozr_parent_id') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('ozr_parent_id'));
   const [authLoading, setAuthLoading] = useState(false);
+  const [loginMessage, setLoginMessage] = useState(''); // New state for login feedback
+  
   const [myChildren, setMyChildren] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -84,17 +87,40 @@ const Inquiry: React.FC = () => {
   const SCHOOL_NAME = localStorage.getItem('school_name') || "مدرسة عماد الدين زنكي المتوسطة";
   const SCHOOL_LOGO = localStorage.getItem('school_logo') || "https://www.raed.net/img?id=1471924";
 
-  // Login
+  // Login Logic Updated
   const handleLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!parentCivilId) return;
+      
       setAuthLoading(true);
-      setTimeout(async () => {
+      setLoginMessage('جاري التحقق من الهوية...');
+
+      try {
+          // Check if parent ID exists in DB
+          const exists = await checkParentRegistration(parentCivilId);
+          
+          if (exists) {
+              setLoginMessage('مرحباً بعودتك! جاري تحميل بياناتك...');
+          } else {
+              setLoginMessage('حساب جديد، جاري تهيئة الدخول...');
+          }
+
+          // Small delay for UX so user reads message
+          setTimeout(async () => {
+              localStorage.setItem('ozr_parent_id', parentCivilId);
+              setIsAuthenticated(true);
+              await loadParentDashboard();
+              setAuthLoading(false);
+              setLoginMessage('');
+          }, 1500);
+
+      } catch (error) {
+          console.error("Login Check Error", error);
+          // Fallback allow login
           localStorage.setItem('ozr_parent_id', parentCivilId);
           setIsAuthenticated(true);
-          await loadParentDashboard();
           setAuthLoading(false);
-      }, 1000);
+      }
   };
 
   const handleLogout = () => {
@@ -188,29 +214,36 @@ const Inquiry: React.FC = () => {
       };
   }, [isAuthenticated, parentCivilId, myChildren]);
 
+  const sendTestNotification = () => {
+      const title = "تجربة التنبيهات";
+      const options = {
+          body: "هذا إشعار تجريبي للتأكد من عمل النظام على جوالك.",
+          icon: SCHOOL_LOGO,
+          badge: SCHOOL_LOGO,
+          vibrate: [200, 100, 200],
+          tag: 'test-notification',
+          renotify: true
+      };
+
+      if ('serviceWorker' in navigator) {
+         navigator.serviceWorker.ready.then(registration => {
+            registration.showNotification(title, options);
+         });
+      } else {
+          new Notification(title, options);
+      }
+  };
+
   const handleEnablePush = async () => {
       setPushLoading(true);
       try {
           const permission = await Notification.requestPermission();
           if (permission === 'granted') { 
-              await subscribeToPushNotifications(parentCivilId); 
               setPushStatus('granted'); 
-              
-              // Trigger a test notification via Service Worker
-              if ('serviceWorker' in navigator) {
-                  navigator.serviceWorker.ready.then(registration => {
-                      registration.showNotification("تم تفعيل الإشعارات", {
-                          body: "ستصلك التنبيهات المدرسية هنا فوراً.",
-                          icon: SCHOOL_LOGO,
-                          // @ts-ignore
-                          vibrate: [200, 100, 200]
-                      });
-                  });
-              }
-              
-              alert("تم تفعيل الإشعارات بنجاح!"); 
+              sendTestNotification();
+              alert("تم تفعيل الإشعارات بنجاح! تم إرسال إشعار تجريبي للتأكد."); 
           } 
-          else { alert("تم رفض الإذن."); }
+          else { alert("تم رفض الإذن. يرجى تفعيله من إعدادات المتصفح."); }
       } catch (e) { alert("تعذر تفعيل الإشعارات."); } 
       finally { setPushLoading(false); }
   };
@@ -233,6 +266,7 @@ const Inquiry: React.FC = () => {
       } catch (e) { alert("حدث خطأ."); } finally { setLoading(false); } 
   };
   
+  // ... (Rest of the component remains unchanged) ...
   const handleSelectStudent = async (student: Student) => {
       setSelectedStudent(student);
       setLoading(true);
@@ -395,6 +429,9 @@ const Inquiry: React.FC = () => {
                 <p className="text-slate-300 text-sm mb-8">سجل دخولك برقم الهوية</p>
                 <form onSubmit={handleLogin} className="space-y-6">
                     <input type="tel" required maxLength={10} value={parentCivilId} onChange={e => setParentCivilId(e.target.value.replace(/[^0-9]/g, ''))} className="w-full p-4 bg-slate-800/50 border border-slate-600 rounded-2xl text-center text-xl font-bold text-white tracking-widest outline-none focus:ring-2 focus:ring-blue-500" placeholder="1XXXXXXXXX"/>
+                    {loginMessage && (
+                        <p className="text-emerald-300 text-sm font-bold animate-pulse">{loginMessage}</p>
+                    )}
                     <button disabled={authLoading} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 transition-all flex items-center justify-center">{authLoading ? <Loader2 className="animate-spin"/> : 'تسجيل الدخول'}</button>
                 </form>
             </div>
@@ -405,6 +442,7 @@ const Inquiry: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 pb-24 font-sans relative">
         <div id="print-area" className="hidden" dir="rtl">
+            {/* ... (Print Templates Unchanged) ... */}
             {printMode === 'certificate' && certificateData && (
                 <div className="certificate-border text-center flex flex-col justify-between p-10 h-full bg-white relative">
                     <div className="flex justify-between items-start mb-8 relative z-10">
@@ -434,8 +472,9 @@ const Inquiry: React.FC = () => {
             <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-2 font-bold text-slate-800"><Users size={20} className="text-blue-600"/><span className="hidden md:inline">بوابة ولي الأمر</span></div>
                 <div className="flex items-center gap-2">
-                    {pushStatus === 'default' && <button onClick={handleEnablePush} disabled={pushLoading} className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1">{pushLoading ? <Loader2 size={12}/> : <BellRing size={12}/>} تفعيل التنبيهات</button>}
-                    <button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 rounded-full hover:bg-slate-50"><Bell size={24} className="text-slate-600"/>{unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-bounce"></span>}</button>
+                    {pushStatus !== 'granted' && <button onClick={handleEnablePush} disabled={pushLoading} className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1">{pushLoading ? <Loader2 size={12}/> : <BellRing size={12}/>} تفعيل التنبيهات</button>}
+                    {pushStatus === 'granted' && <button onClick={sendTestNotification} className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 hover:bg-amber-200"><Zap size={12}/> تجربة</button>}
+                    <button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 rounded-full hover:bg-slate-50"><Bell size={24} className="text-slate-600"/>{notifications.filter(n=>!n.isRead).length > 0 && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-bounce"></span>}</button>
                     <button onClick={handleLogout} className="p-2 rounded-full text-red-500 hover:bg-red-50"><LogOut size={20}/></button>
                 </div>
             </div>
@@ -500,6 +539,7 @@ const Inquiry: React.FC = () => {
                 </div>
             ) : (
                 <div className="animate-fade-in space-y-6 max-w-4xl mx-auto">
+                    {/* ... (Existing Student Profile View) ... */}
                     <div className="flex items-center gap-2 mb-2">
                         <button onClick={() => setSelectedStudent(null)} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50"><ArrowRight size={20} className="text-slate-600"/></button>
                         <h2 className="text-lg font-bold text-slate-800">ملف الطالب</h2>

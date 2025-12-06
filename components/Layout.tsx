@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine, LogOut as ExitIcon, Download, Share, BellRing, Loader2, Code } from 'lucide-react';
+import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine, LogOut as ExitIcon, Download, Share, BellRing, Loader2, Code, Zap } from 'lucide-react';
 import { StaffUser, AppNotification } from '../types';
 import { getPendingRequestsCountForStaff, getNotifications, getParentChildren, createNotification } from '../services/storage';
 import ChatBot from './ChatBot';
@@ -104,23 +104,28 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
     const permission = await Notification.requestPermission();
     setNotifPermission(permission);
     if (permission === 'granted') {
-      // Send a test notification using Service Worker if available
+        sendTestNotification();
+    }
+  };
+
+  const sendTestNotification = () => {
+      const title = "تجربة التنبيهات";
+      const options = {
+          body: "هذا إشعار تجريبي للتأكد من عمل النظام على جوالك.",
+          icon: SCHOOL_LOGO,
+          badge: SCHOOL_LOGO,
+          vibrate: [200, 100, 200],
+          tag: 'test-notification',
+          renotify: true
+      };
+
       if ('serviceWorker' in navigator) {
          navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification("تم تفعيل الإشعارات", {
-                body: "ستصلك التنبيهات المدرسية هنا فوراً.",
-                icon: SCHOOL_LOGO,
-                // @ts-ignore
-                vibrate: [200, 100, 200]
-            });
+            registration.showNotification(title, options);
          });
       } else {
-          new Notification("تم تفعيل الإشعارات", {
-              body: "ستصلك التنبيهات المدرسية هنا فوراً.",
-              icon: SCHOOL_LOGO
-          });
+          new Notification(title, options);
       }
-    }
   };
 
   // --- GLOBAL REALTIME NOTIFICATIONS (System Level) ---
@@ -352,7 +357,7 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
         </div>
 
         {/* Enable Notification Button (If Permission is default/prompt) */}
-        {notifPermission === 'default' && (
+        {notifPermission !== 'granted' && (
             <div className={`px-4 mb-2 animate-pulse ${isSidebarCollapsed ? 'px-2' : ''}`}>
                 <button 
                     onClick={requestNotificationPermission}
@@ -465,10 +470,20 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
             </>
           )}
 
+          {/* TEST NOTIFICATION BUTTON (Always Visible if installed) */}
+          <div className="my-2 border-t border-slate-100 mx-4"></div>
+          <button
+              onClick={sendTestNotification}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-amber-600 hover:bg-amber-50 transition-colors duration-200 font-bold shrink-0 ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}
+              title="تجربة التنبيهات"
+          >
+              <Zap size={22} className="shrink-0" />
+              {!isSidebarCollapsed && <span>تجربة التنبيهات</span>}
+          </button>
+
           {/* INSTALL APP BUTTON (Visible if not installed) */}
           {!isInstalled && (
             <>
-                <div className="my-2 border-t border-slate-100 mx-4"></div>
                 <button
                     onClick={handleInstallClick}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-colors duration-200 font-bold shrink-0 ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}

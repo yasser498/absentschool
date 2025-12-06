@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { FileText, Search, ArrowLeft, ShieldCheck, Users, School, Megaphone, Calendar, ChevronLeft, Bell, LayoutGrid, LogIn } from 'lucide-react';
@@ -31,9 +30,26 @@ const Home: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
+    <div className="min-h-screen bg-slate-50 font-sans flex flex-col">
       
-      {/* 1. HERO SECTION */}
+      {/* 1. TOP ALERTS BAR (Moved to Top) */}
+      {urgentNews.length > 0 && (
+        <div className="bg-red-600 text-white relative z-50 shadow-md">
+            <div className="max-w-7xl mx-auto px-4 py-3 space-y-2">
+                {urgentNews.map(news => (
+                    <div key={news.id} className="flex items-center gap-3 animate-pulse-slow">
+                        <span className="bg-white/20 p-1.5 rounded-lg shrink-0"><Bell size={16}/></span>
+                        <div className="flex-1 text-xs md:text-sm font-medium">
+                            <span className="bg-white text-red-600 px-2 py-0.5 rounded font-bold ml-2 text-[10px]">عاجل</span>
+                            <span className="font-bold">{news.title}:</span> <span className="opacity-90">{news.content}</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
+
+      {/* 2. HERO SECTION */}
       <div className="relative bg-blue-900 text-white overflow-hidden rounded-b-[3rem] shadow-2xl">
           {/* Background Effects */}
           <div className="absolute inset-0">
@@ -83,19 +99,6 @@ const Home: React.FC = () => {
                   </div>
               </div>
           </div>
-      </div>
-
-      {/* 2. ALERTS & NEWS TICKER */}
-      <div className="max-w-7xl mx-auto px-6 -mt-10 relative z-20 space-y-4">
-          {urgentNews.map(news => (
-            <div key={news.id} className="bg-red-600 text-white p-4 rounded-xl shadow-lg flex items-center gap-4 animate-pulse-slow">
-               <span className="bg-white/20 p-2 rounded-lg"><Bell size={20}/></span>
-               <div className="flex-1">
-                  <span className="bg-white text-red-600 text-[10px] px-2 py-0.5 rounded font-bold ml-2">عاجل</span>
-                  <span className="font-bold text-sm">{news.title}:</span> <span className="text-sm opacity-90">{news.content}</span>
-               </div>
-            </div>
-          ))}
       </div>
 
       {/* 3. PORTALS GRID */}
@@ -197,7 +200,7 @@ const Home: React.FC = () => {
       )}
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-12 mt-12">
+      <footer className="bg-white border-t border-slate-200 py-12 mt-auto">
           <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
               <div className="flex items-center gap-4">
                   <img src={SCHOOL_LOGO} alt="Logo" className="w-12 h-12 object-contain opacity-80" />

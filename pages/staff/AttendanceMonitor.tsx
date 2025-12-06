@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, AlertTriangle, Phone, FileText, CheckCircle, Search, 
-  Filter, Forward, CalendarDays, List, ShieldCheck, Loader2, Printer, FileWarning
+  Filter, Forward, CalendarDays, List, ShieldCheck, Loader2, Printer, FileWarning, Eye, CheckSquare, XCircle
 } from 'lucide-react';
-import { getStudents, getAttendanceRecords, addReferral, getRequests } from '../../services/storage';
+import { getStudents, getAttendanceRecords, addReferral, getRequests, resolveAbsenceAlert, getRiskHistory } from '../../services/storage';
 import { Student, AttendanceRecord, Referral, ExcuseRequest } from '../../types';
 
 interface AttendanceMonitorProps {
@@ -15,29 +14,40 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
   const [students, setStudents] = useState<Student[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [requests, setRequests] = useState<ExcuseRequest[]>([]);
+  const [riskHistory, setRiskHistory] = useState<any[]>([]); // New state for history
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'general' | 'consecutive'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'consecutive' | 'followup'>('general');
   const [filterRisk, setFilterRisk] = useState<'all' | 'high' | 'medium' | 'low'>('all');
 
+  // Helper for Android Phone Calls
+  const formatPhone = (phone: string) => {
+      if (!phone) return '';
+      // Replace +966 or 966 or 00966 with 0
+      return phone.replace(/^(00966|\+966|966)/, '0');
+  };
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [s, r, reqs, hist] = await Promise.all([
+          getStudents().catch(() => []), 
+          getAttendanceRecords().catch(() => []), 
+          getRequests().catch(() => []),
+          getRiskHistory().catch(() => [])
+      ]);
+      setStudents(s || []);
+      setRecords(r || []);
+      setRequests(reqs || []);
+      setRiskHistory(hist || []);
+    } catch (e) { 
+      console.error("Failed to load attendance monitor data", e); 
+    } finally { 
+      setLoading(false); 
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [s, r, reqs] = await Promise.all([
-            getStudents().catch(() => []), 
-            getAttendanceRecords().catch(() => []), 
-            getRequests().catch(() => [])
-        ]);
-        setStudents(s || []);
-        setRecords(r || []);
-        setRequests(reqs || []);
-      } catch (e) { 
-        console.error("Failed to load attendance monitor data", e); 
-      } finally { 
-        setLoading(false); 
-      }
-    };
     fetchData();
   }, []);
 
@@ -134,8 +144,20 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
           }
       });
 
+      // Filter out students who have recent risk actions (resolved within last 7 days)
+      const recentResolutions = new Set();
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      riskHistory.forEach(action => {
+          if (new Date(action.resolved_at) >= sevenDaysAgo) {
+              recentResolutions.add(action.student_id);
+          }
+      });
+
       students.forEach(student => {
           if (!student.studentId) return;
+          if (recentResolutions.has(student.studentId)) return; // Skip recently resolved
 
           const history = studentDates[student.studentId] || [];
           
@@ -173,7 +195,7 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
       });
 
       return result.sort((a, b) => b.streak - a.streak);
-  }, [students, records, approvedExcusesMap]);
+  }, [students, records, approvedExcusesMap, riskHistory]);
 
 
   // --- ACTIONS ---
@@ -181,8 +203,15 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
       alert(`تم تسجيل الإجراء: ${action}`);
   };
 
+  const handleCloseCase = async (student: Student, note: string) => {
+      if(!confirm(`هل أنت متأكد من إغلاق حالة الطالب ${student.name}؟ لن يظهر في القائمة حتى يتغيب مجدداً.`)) return;
+      await resolveAbsenceAlert(student.studentId, 'closed', note);
+      alert("تم إغلاق الحالة ونقلها للمتابعة.");
+      fetchData();
+  };
+
   const handleReferToCounselor = async (student: Student, dates?: string[]) => {
-      if(!confirm(`هل أنت متأكد من تحويل الطالب ${student.name} للموجه الطلابي بسبب الغياب؟`)) return;
+      if(!confirm(`هل أنت متأكد من تحويل الطالب ${student.name} للموجه الطلابي بسبب الغياب؟\n(سيتم إزالة الطالب من قائمة الغياب المتصل)`)) return;
       
       const reasonText = dates && dates.length > 0 
         ? `غياب متصل (بدون عذر) لمدة ${dates.length} أيام (${dates.join(', ')})`
@@ -202,12 +231,17 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
       };
 
       try {
+          // 1. Create Referral
           await addReferral(newReferral);
+          // 2. Mark as Resolved/Referred in Risk Actions so it disappears from the list
+          await resolveAbsenceAlert(student.studentId, 'referral', 'تم تحويله للموجه الطلابي');
+          
           alert("تم إنشاء الإحالة وإرسالها للموجه بنجاح.");
           
           if (onPrintAction && confirm("هل ترغب بطباعة نموذج الإحالة ورقياً؟")) {
               onPrintAction(student, 'referral_print', dates);
           }
+          fetchData();
       } catch (error) {
           alert("حدث خطأ أثناء التحويل.");
       }
@@ -237,18 +271,24 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
             />
          </div>
          
-         <div className="flex bg-slate-100 p-1 rounded-xl">
+         <div className="flex bg-slate-100 p-1 rounded-xl overflow-x-auto w-full md:w-auto">
              <button 
                 onClick={() => setActiveTab('general')} 
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'general' ? 'bg-white shadow text-blue-900' : 'text-slate-500'}`}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'general' ? 'bg-white shadow text-blue-900' : 'text-slate-500'}`}
              >
                  <List size={16}/> المتابعة العامة
              </button>
              <button 
                 onClick={() => setActiveTab('consecutive')} 
-                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'consecutive' ? 'bg-white shadow text-red-600' : 'text-slate-500'}`}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'consecutive' ? 'bg-white shadow text-red-600' : 'text-slate-500'}`}
              >
                  <CalendarDays size={16}/> الغياب المتصل (خطر)
+             </button>
+             <button 
+                onClick={() => setActiveTab('followup')} 
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'followup' ? 'bg-white shadow text-emerald-600' : 'text-slate-500'}`}
+             >
+                 <CheckSquare size={16}/> المتابعة والسجل
              </button>
          </div>
       </div>
@@ -302,9 +342,9 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
                         </div>
 
                         <div className="flex gap-2">
-                            <button onClick={() => handleAction(stat.student.id, 'call')} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 hover:bg-blue-100">
+                            <a href={`tel:${formatPhone(stat.student.phone)}`} className="flex-1 bg-blue-50 text-blue-600 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 hover:bg-blue-100">
                                 <Phone size={14}/> اتصال
-                            </button>
+                            </a>
                             <button onClick={() => handleReferToCounselor(stat.student)} className="flex-1 bg-purple-50 text-purple-600 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1 hover:bg-purple-100">
                                 <Forward size={14}/> تحويل
                             </button>
@@ -360,7 +400,7 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
                             </td>
                             <td className="p-4 text-center">
                                 <div className="flex justify-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleAction(stat.student.id, 'call')} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100" title="تم الاتصال"><Phone size={16}/></button>
+                                <a href={`tel:${formatPhone(stat.student.phone)}`} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100" title="اتصال"><Phone size={16}/></a>
                                 <button onClick={() => handleReferToCounselor(stat.student)} className="p-2 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100" title="تحويل للموجه"><Forward size={16}/></button>
                                 {onPrintAction && (
                                     <>
@@ -386,7 +426,7 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
                   <AlertTriangle className="text-red-600" size={24}/>
                   <div>
                       <h3 className="font-bold text-red-900">حالات الغياب المتصل (3 أيام فأكثر - بدون عذر)</h3>
-                      <p className="text-sm text-red-700">هذه القائمة تستثني أيام الغياب التي لها أعذار مقبولة.</p>
+                      <p className="text-sm text-red-700">هذه القائمة تستثني أيام الغياب التي لها أعذار مقبولة، وكذلك الحالات التي تم إحالتها أو إغلاقها مؤخراً.</p>
                   </div>
               </div>
 
@@ -408,21 +448,24 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
                               {item.dates.map(date => <span key={date} className="bg-white border px-1 rounded">{date}</span>)}
                           </div>
 
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 mb-2">
                               <button onClick={() => handleReferToCounselor(item.student, item.dates)} className="flex-1 bg-purple-600 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-purple-700">
                                   <Forward size={14}/> تحويل
                               </button>
-                              {onPrintAction && (
-                                  <>
-                                    <button onClick={() => onPrintAction(item.student, 'referral_print', item.dates)} className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-slate-200">
-                                        <Printer size={14}/> إحالة
-                                    </button>
-                                    <button onClick={() => onPrintAction(item.student, 'absence_notice', item.dates)} className="flex-1 bg-red-50 text-red-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-red-100">
-                                        <FileWarning size={14}/> إشعار
-                                    </button>
-                                  </>
-                              )}
+                              <button onClick={() => handleCloseCase(item.student, 'تم التواصل والاكتفاء بالتنبيه')} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-emerald-700">
+                                  <CheckCircle size={14}/> إغلاق
+                              </button>
                           </div>
+                          {onPrintAction && (
+                              <div className="flex gap-2">
+                                <button onClick={() => onPrintAction(item.student, 'referral_print', item.dates)} className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-slate-200">
+                                    <Printer size={14}/> إحالة
+                                </button>
+                                <button onClick={() => onPrintAction(item.student, 'absence_notice', item.dates)} className="flex-1 bg-red-50 text-red-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-red-100">
+                                    <FileWarning size={14}/> إشعار
+                                </button>
+                              </div>
+                          )}
                       </div>
                   ))}
                   {consecutiveStats.length === 0 && <p className="text-center py-10 text-slate-400">ممتاز! لا يوجد حالات.</p>}
@@ -468,19 +511,25 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
                                           >
                                               <Forward size={14}/> تحويل
                                           </button>
+                                          <button 
+                                            onClick={() => handleCloseCase(item.student, 'تم اتخاذ اللازم')}
+                                            className="flex items-center gap-1 bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700 shadow-sm"
+                                          >
+                                              <CheckCircle size={14}/> إغلاق
+                                          </button>
                                           {onPrintAction && (
                                               <>
                                                 <button 
                                                     onClick={() => onPrintAction(item.student, 'referral_print', item.dates)}
                                                     className="flex items-center gap-1 bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-50"
                                                 >
-                                                    <Printer size={14}/> طباعة إحالة
+                                                    <Printer size={14}/> إحالة
                                                 </button>
                                                 <button 
                                                     onClick={() => onPrintAction(item.student, 'absence_notice', item.dates)}
                                                     className="flex items-center gap-1 bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-50"
                                                 >
-                                                    <FileWarning size={14}/> إشعار ولي أمر
+                                                    <FileWarning size={14}/> إشعار
                                                 </button>
                                               </>
                                           )}
@@ -495,6 +544,55 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
                           <CheckCircle className="mx-auto mb-2 text-emerald-200" size={48}/>
                           <p>ممتاز! لا يوجد حالات انقطاع متصل (بدون عذر) حالياً.</p>
                       </div>
+                  )}
+              </div>
+          </div>
+      )}
+
+      {/* --- TAB: FOLLOW-UP (HISTORY) --- */}
+      {activeTab === 'followup' && (
+          <div className="space-y-4 animate-fade-in">
+              <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex items-center gap-3">
+                  <CheckSquare className="text-emerald-600" size={24}/>
+                  <div>
+                      <h3 className="font-bold text-emerald-900">سجل المتابعة والإجراءات</h3>
+                      <p className="text-sm text-emerald-700">هنا تظهر الحالات التي تم إغلاقها أو تحويلها للمرشد.</p>
+                  </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  {riskHistory.length === 0 ? <p className="text-center py-10 text-slate-400">السجل فارغ.</p> : (
+                      <table className="w-full text-right text-sm">
+                          <thead className="bg-slate-50 text-slate-500 font-bold text-xs uppercase border-b border-slate-100">
+                              <tr>
+                                  <th className="p-4">الطالب</th>
+                                  <th className="p-4">نوع الإجراء</th>
+                                  <th className="p-4">الملاحظات</th>
+                                  <th className="p-4">التاريخ</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                              {riskHistory.map((item, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-50">
+                                      <td className="p-4 font-bold text-slate-800">
+                                          {item.studentName}
+                                          <div className="text-xs text-slate-400 font-normal">{item.grade}</div>
+                                      </td>
+                                      <td className="p-4">
+                                          <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+                                              item.action_type === 'referral' ? 'bg-purple-100 text-purple-700' : 
+                                              item.action_type === 'closed' ? 'bg-emerald-100 text-emerald-700' : 
+                                              'bg-slate-100 text-slate-700'
+                                          }`}>
+                                              {item.action_type === 'referral' ? 'تحويل للموجه' : item.action_type === 'closed' ? 'إغلاق الحالة' : item.action_type}
+                                          </span>
+                                      </td>
+                                      <td className="p-4 text-slate-600 text-xs">{item.notes || '-'}</td>
+                                      <td className="p-4 text-slate-400 text-xs font-mono">{new Date(item.resolved_at).toLocaleDateString('ar-SA')}</td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
                   )}
               </div>
           </div>

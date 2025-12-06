@@ -5,7 +5,7 @@ import {
   Trash2, Edit, ArrowRight, LayoutGrid, FileText, School, Inbox, ChevronLeft,
   Calendar, AlertCircle, PieChart as PieIcon, List, Activity, ShieldAlert, Gavel, Forward, CheckCircle, Phone, Clock,
   Medal, Star, ClipboardList, GitCommit, Eye, ArrowUpRight, CheckSquare, FileBadge, PenTool, Wand2, ChevronRight, Gavel as HammerIcon,
-  AlertOctagon, History, Trophy, MessageCircle
+  AlertOctagon, History, Trophy, MessageCircle, MoreHorizontal
 } from 'lucide-react';
 import { 
   getStudents, 
@@ -30,7 +30,7 @@ import {
 } from '../../services/storage';
 import { Student, BehaviorRecord, StaffUser, Referral, StudentObservation } from '../../types';
 import { BEHAVIOR_VIOLATIONS, GRADES } from '../../constants';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, AreaChart, Area } from 'recharts';
 import AttendanceMonitor from './AttendanceMonitor';
 
 // --- Official Header Component (Print Only) ---
@@ -108,7 +108,7 @@ const StaffDeputy: React.FC = () => {
   const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0]);
   
   // Printing State
-  const [printMode, setPrintMode] = useState<'none' | 'commitment' | 'summons' | 'certificate' | 'referral_report' | 'positive_log' | 'positive_daily_report' | 'absence_referral' | 'absence_notice'>('none');
+  const [printMode, setPrintMode] = useState<'none' | 'commitment' | 'summons' | 'certificate' | 'referral_report' | 'positive_log' | 'positive_daily_report' | 'absence_referral' | 'absence_notice' | 'daily_violation_report' | 'full_violation_log'>('none');
   const [recordToPrint, setRecordToPrint] = useState<BehaviorRecord | null>(null);
   const [studentToPrint, setStudentToPrint] = useState<Student | null>(null); 
   const [absenceDatesToPrint, setAbsenceDatesToPrint] = useState<string[]>([]);
@@ -153,14 +153,37 @@ const StaffDeputy: React.FC = () => {
       const myReferrals = referrals.filter(r => r.referredBy === 'deputy');
       const resolvedReferrals = myReferrals.filter(r => r.status === 'resolved').length;
 
+      // Stats for Charts
       const typeCounts: Record<string, number> = {};
-      records.forEach(r => typeCounts[r.violationName] = (typeCounts[r.violationName] || 0) + 1);
-      const chartData = Object.entries(typeCounts)
+      const degreeCounts: Record<string, number> = {};
+      
+      records.forEach(r => {
+          typeCounts[r.violationName] = (typeCounts[r.violationName] || 0) + 1;
+          degreeCounts[r.violationDegree] = (degreeCounts[r.violationDegree] || 0) + 1;
+      });
+
+      const pieData = Object.entries(typeCounts)
           .map(([name, value]) => ({ name, value }))
           .sort((a,b) => b.value - a.value)
-          .slice(0, 5);
+          .slice(0, 5); // Top 5 violations
 
-      return { totalViolations, todayViolations, atRiskCount, myReferralsCount: myReferrals.length, resolvedReferrals, chartData };
+      const barData = Object.entries(degreeCounts)
+          .map(([name, value]) => ({ name, value }))
+          .sort((a,b) => a.name.localeCompare(b.name));
+
+      // Recent Activity
+      const recentActivity = [...records].sort((a,b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()).slice(0, 5);
+
+      return { 
+          totalViolations, 
+          todayViolations, 
+          atRiskCount, 
+          myReferralsCount: myReferrals.length, 
+          resolvedReferrals, 
+          pieData, 
+          barData,
+          recentActivity 
+      };
   }, [records, riskList, referrals]);
 
   const availableClasses = useMemo(() => {
@@ -401,9 +424,22 @@ const StaffDeputy: React.FC = () => {
       setTimeout(() => { window.print(); setPrintMode('none'); }, 500);
   };
 
+  const handlePrintDailyViolations = () => {
+      setPrintMode('daily_violation_report');
+      setTimeout(() => { window.print(); setPrintMode('none'); }, 300);
+  };
+
+  const handlePrintFullLog = () => {
+      setPrintMode('full_violation_log');
+      setTimeout(() => { window.print(); setPrintMode('none'); }, 300);
+  };
+
   const filteredPositiveObservations = useMemo(() => {
       return positiveObservations.filter(obs => obs.date === reportDate);
   }, [positiveObservations, reportDate]);
+
+  // Colors for Charts
+  const COLORS = ['#ef4444', '#f97316', '#f59e0b', '#10b981', '#3b82f6'];
 
   return (
     <>
@@ -411,6 +447,7 @@ const StaffDeputy: React.FC = () => {
         <div className="print-page-a4">
             <img src="https://www.raed.net/img?id=1474173" className="print-watermark" alt="Watermark" />
             
+            {/* Template for Violation Commitment / Summons */}
             {(printMode === 'commitment' || printMode === 'summons') && recordToPrint && (
             <div>
                 <OfficialHeader schoolName={SCHOOL_NAME} subTitle="وكالة شؤون الطلاب" />
@@ -438,6 +475,97 @@ const StaffDeputy: React.FC = () => {
             </div>
             )}
 
+            {/* Template for Daily Violation Report */}
+            {printMode === 'daily_violation_report' && (
+                <div>
+                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="وكالة شؤون الطلاب" />
+                    <div className="mt-8 px-4">
+                        <h1 className="official-title">تقرير المخالفات السلوكية اليومي</h1>
+                        <p className="text-center font-bold mb-6">التاريخ: {new Date().toLocaleDateString('ar-SA')}</p>
+                        
+                        <table className="w-full text-right border-collapse border border-black">
+                            <thead>
+                                <tr className="bg-gray-100">
+                                    <th className="border border-black p-2 w-10 text-center">م</th>
+                                    <th className="border border-black p-2">اسم الطالب</th>
+                                    <th className="border border-black p-2">الصف</th>
+                                    <th className="border border-black p-2">المخالفة</th>
+                                    <th className="border border-black p-2">الدرجة</th>
+                                    <th className="border border-black p-2">الإجراء المتخذ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {records.filter(r => r.date === new Date().toISOString().split('T')[0]).length > 0 ? (
+                                    records.filter(r => r.date === new Date().toISOString().split('T')[0]).map((rec, idx) => (
+                                        <tr key={idx}>
+                                            <td className="border border-black p-2 text-center">{idx + 1}</td>
+                                            <td className="border border-black p-2 font-bold">{rec.studentName}</td>
+                                            <td className="border border-black p-2">{rec.grade} - {rec.className}</td>
+                                            <td className="border border-black p-2">{rec.violationName}</td>
+                                            <td className="border border-black p-2">{rec.violationDegree}</td>
+                                            <td className="border border-black p-2">{rec.actionTaken}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr><td colSpan={6} className="border border-black p-4 text-center">لا توجد مخالفات مسجلة اليوم</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+
+                        <div className="mt-16 flex justify-between px-8">
+                            <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
+                            <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Template for Full Violation Log */}
+            {printMode === 'full_violation_log' && (
+                <div>
+                    <OfficialHeader schoolName={SCHOOL_NAME} subTitle="وكالة شؤون الطلاب" />
+                    <div className="mt-8 px-4">
+                        <h1 className="official-title">السجل الشامل للمخالفات السلوكية</h1>
+                        <p className="text-center text-sm mb-6">سجل تفصيلي يوضح المخالفات والإجراءات وردود أولياء الأمور</p>
+                        
+                        <table className="w-full text-right border-collapse border border-black text-xs">
+                            <thead>
+                                <tr className="bg-gray-100">
+                                    <th className="border border-black p-2 w-8 text-center">م</th>
+                                    <th className="border border-black p-2 w-1/5">اسم الطالب</th>
+                                    <th className="border border-black p-2 w-20">التاريخ</th>
+                                    <th className="border border-black p-2 w-1/4">المخالفة</th>
+                                    <th className="border border-black p-2 w-1/4">الإجراء</th>
+                                    <th className="border border-black p-2">رد ولي الأمر</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {records.length > 0 ? (
+                                    records.map((rec, idx) => (
+                                        <tr key={idx}>
+                                            <td className="border border-black p-2 text-center">{idx + 1}</td>
+                                            <td className="border border-black p-2 font-bold">{rec.studentName}<br/><span className="font-normal text-[10px]">{rec.grade}</span></td>
+                                            <td className="border border-black p-2">{rec.date}</td>
+                                            <td className="border border-black p-2">{rec.violationName} ({rec.violationDegree})</td>
+                                            <td className="border border-black p-2">{rec.actionTaken}</td>
+                                            <td className="border border-black p-2">{rec.parentFeedback || '-'}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr><td colSpan={6} className="border border-black p-4 text-center">السجل نظيف</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+
+                        <div className="mt-16 flex justify-between px-8">
+                            <div className="text-center"><p className="font-bold mb-8">وكيل شؤون الطلاب</p><p>{currentUser?.name}</p></div>
+                            <div className="text-center"><p className="font-bold mb-8">مدير المدرسة</p><p>.............................</p></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Template for Certificate */}
             {printMode === 'certificate' && studentToPrint && certificateData && (
                 <div className="h-full flex flex-col pt-10">
                     <OfficialHeader schoolName={SCHOOL_NAME} subTitle="" />
@@ -493,6 +621,92 @@ const StaffDeputy: React.FC = () => {
                         <h3 className="text-3xl font-extrabold text-emerald-600 mt-1">{stats.resolvedReferrals}</h3>
                     </div>
                 </div>
+
+                {/* 2. Visual Analytics Section */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Pie Chart: Violation Types */}
+                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm col-span-1 md:col-span-1 flex flex-col">
+                        <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><PieIcon size={16} className="text-blue-500"/> أكثر المخالفات شيوعاً</h3>
+                        <div className="flex-1 min-h-[250px]">
+                            {stats.pieData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie data={stats.pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                                            {stats.pieData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={['#ef4444', '#f97316', '#f59e0b', '#8b5cf6', '#3b82f6'][index % 5]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip />
+                                        <Legend />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <p className="text-center text-slate-400 mt-10">لا توجد بيانات كافية</p>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Bar Chart: Violation Degrees */}
+                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm col-span-1 md:col-span-2 flex flex-col">
+                        <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2"><BarChart2 size={16} className="text-purple-500"/> تصنيف المخالفات (حسب الدرجة)</h3>
+                        <div className="flex-1 min-h-[250px]">
+                            {stats.barData.length > 0 ? (
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={stats.barData} layout="vertical">
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 10}} />
+                                        <Tooltip cursor={{fill: 'transparent'}} />
+                                        <Bar dataKey="value" fill="#6366f1" radius={[0, 4, 4, 0]} barSize={20} />
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            ) : (
+                                <p className="text-center text-slate-400 mt-10">لا توجد بيانات كافية</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* 3. Recent Activity & Quick Actions */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    {/* Recent Activity Feed */}
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Activity size={18} className="text-emerald-500"/> آخر المستجدات (الآن)</h3>
+                        <div className="space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                            {stats.recentActivity.length === 0 ? <p className="text-slate-400 text-sm">لا يوجد نشاط حديث.</p> : stats.recentActivity.map((act, idx) => (
+                                <div key={idx} className="flex items-start gap-3 pb-3 border-b border-slate-50 last:border-0">
+                                    <div className="bg-slate-100 p-2 rounded-full mt-1">
+                                        <ShieldAlert size={14} className="text-slate-500"/>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-slate-800">{act.studentName} <span className="text-xs font-normal text-slate-400">({act.grade})</span></p>
+                                        <p className="text-xs text-slate-600 mt-0.5">{act.violationName}</p>
+                                        <span className="text-[10px] text-slate-400 block mt-1">{new Date(act.createdAt || '').toLocaleTimeString('ar-SA')}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Quick Actions Grid */}
+                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Sparkles size={18} className="text-amber-500"/> الوصول السريع</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button onClick={() => setShowViolationModal(true)} className="p-4 rounded-xl bg-red-50 text-red-700 font-bold text-sm flex flex-col items-center gap-2 hover:bg-red-100 transition-colors">
+                                <Plus size={24}/> تسجيل مخالفة
+                            </button>
+                            <button onClick={() => setActiveView('attendance')} className="p-4 rounded-xl bg-orange-50 text-orange-700 font-bold text-sm flex flex-col items-center gap-2 hover:bg-orange-100 transition-colors">
+                                <Clock size={24}/> متابعة الغياب
+                            </button>
+                            <button onClick={() => setActiveView('referrals')} className="p-4 rounded-xl bg-blue-50 text-blue-700 font-bold text-sm flex flex-col items-center gap-2 hover:bg-blue-100 transition-colors">
+                                <GitCommit size={24}/> الإحالات
+                            </button>
+                            <button onClick={() => setActiveView('positive')} className="p-4 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-sm flex flex-col items-center gap-2 hover:bg-emerald-100 transition-colors">
+                                <Star size={24}/> تكريم طالب
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         )}
 
@@ -502,7 +716,11 @@ const StaffDeputy: React.FC = () => {
             <div className="space-y-4 animate-fade-in">
                 <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-200">
                     <h2 className="text-lg font-bold text-slate-800">سجل المخالفات السلوكية</h2>
-                    <button onClick={() => setShowViolationModal(true)} className="bg-red-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"><Plus size={18}/> تسجيل مخالفة</button>
+                    <div className="flex gap-2">
+                        <button onClick={handlePrintDailyViolations} className="bg-white border border-slate-200 text-slate-600 px-3 py-2 rounded-xl font-bold flex items-center gap-2 text-xs hover:bg-slate-50"><Printer size={14}/> تقرير اليوم</button>
+                        <button onClick={handlePrintFullLog} className="bg-white border border-slate-200 text-slate-600 px-3 py-2 rounded-xl font-bold flex items-center gap-2 text-xs hover:bg-slate-50"><Printer size={14}/> السجل الشامل</button>
+                        <button onClick={() => setShowViolationModal(true)} className="bg-red-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 text-sm hover:bg-red-700"><Plus size={18}/> تسجيل مخالفة</button>
+                    </div>
                 </div>
                 {records.length === 0 ? <p className="text-center py-10 text-slate-400">لا يوجد مخالفات مسجلة.</p> : (
                     <div className="space-y-4">

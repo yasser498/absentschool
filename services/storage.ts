@@ -1,4 +1,3 @@
-
 import { supabase } from '../supabaseClient';
 import { 
   Appointment, AppointmentSlot, 
@@ -52,7 +51,7 @@ export const getAIConfig = (): AIConfig => {
     } catch (e) { console.debug('import.meta.env not available'); }
   }
 
-  return { provider: 'google', apiKey, model: 'gemini-2.5-flash' };
+  return { provider: 'google', apiKey, model: 'gemini-3-pro-preview' };
 };
 
 export const generateSmartContent = async (prompt: string, systemInstruction?: string): Promise<string> => {
@@ -60,7 +59,16 @@ export const generateSmartContent = async (prompt: string, systemInstruction?: s
   if (!config.apiKey) return "عفواً، لم يتم ضبط مفتاح الذكاء الاصطناعي (API Key).";
   try {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
-    const response = await ai.models.generateContent({ model: config.model, contents: prompt, config: { systemInstruction } });
+    // Use Thinking Mode for complex generation
+    // We strictly use gemini-3-pro-preview with thinkingBudget: 32768 for complex reasoning tasks.
+    const response = await ai.models.generateContent({ 
+        model: 'gemini-3-pro-preview', 
+        contents: prompt, 
+        config: { 
+            systemInstruction,
+            thinkingConfig: { thinkingBudget: 32768 }
+        } 
+    });
     return response.text || "";
   } catch (error: any) { 
       console.error("AI Error:", error);
@@ -154,6 +162,57 @@ export const generateGuidancePlan = async (studentName: string, history: any) =>
     استخدم لغة عربية فصحى رسمية جداً، بصيغة المتكلم (الموجه الطلابي).
     `;
     return await generateSmartContent(prompt);
+};
+
+// --- NEW CASE STUDY AI GENERATION ---
+export const generateCaseStudyAnalysis = async (
+    studentName: string, 
+    age: string, 
+    summary: string,
+    records?: { absence: number, late: number, violations: number, observations: string[] }
+) => {
+    let contextStr = "";
+    if (records) {
+        contextStr = `
+        بيانات الطالب من السجلات المدرسية:
+        - عدد أيام الغياب: ${records.absence}
+        - عدد مرات التأخر: ${records.late}
+        - عدد المخالفات السلوكية: ${records.violations}
+        - أبرز ملاحظات المعلمين: ${records.observations.length > 0 ? records.observations.join(" | ") : "لا يوجد"}
+        `;
+    }
+
+    const prompt = `
+    بصفتك خبير في علم النفس التربوي والتوجيه الطلابي، قم بتحليل حالة الطالب: ${studentName} (${age}).
+    
+    ${contextStr}
+
+    ملخص المشكلة المدخل من الموجه: "${summary}"
+
+    المطلوب: قم بتوليد محتوى احترافي ومفصل للحقول التالية بدقة متناهية، ويجب أن يكون الناتج بصيغة JSON فقط:
+    {
+      "description": "1. وصف المشكلة بشكل علمي دقيق وتفصيلي (اربط الوصف بسجلات الغياب والسلوك إن وجدت علاقة قوية)",
+      "initialDiagnosis": "2. الأفكار التشخيصية الأولية (نقاط مرقمة)",
+      "diagnosisIntro": "3. مقدمة العبارة التشخيصية (السياق العام للحالة)",
+      "diagnosisCore": "4. جوهر العبارة التشخيصية (تحليل الأسباب الذاتية والبيئية بعمق، مع استحضار أثر الغياب/المخالفات المذكورة في السجل)",
+      "diagnosisConclusion": "5. خاتمة العبارة التشخيصية (ملخص مكثف للوضع)",
+      "therapeuticGoal": "6. الهدف العلاجي (ما نسعى لتحقيقه بدقة)",
+      "treatmentPlan": "7. الخطة العلاجية (خطوات مفصلة: العلاج الذاتي، العلاج البيئي، دور الأسرة، دور المدرسة. يجب تضمين إجراءات خاصة لمعالجة الغياب أو السلوك إذا كانت الأرقام في السجل مرتفعة)",
+      "notes": "8. ملاحظات وتوصيات إضافية حول الحالة"
+    }
+
+    ملاحظة: استخدم لغة عربية فصحى متخصصة في علم النفس والتوجيه. لا تضف أي نص خارج كائن JSON.
+    `;
+    
+    const content = await generateSmartContent(prompt);
+    try {
+        // Cleanup response if it contains markdown code blocks
+        const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanContent);
+    } catch (e) {
+        console.error("Failed to parse AI JSON", e);
+        return null;
+    }
 };
 
 export const generateUserSpecificBotContext = async (): Promise<{role: string, context: string}> => {
@@ -254,7 +313,16 @@ export const generateUserSpecificBotContext = async (): Promise<{role: string, c
 
 export const analyzeSentiment = async (text: string): Promise<'positive' | 'negative' | 'neutral'> => {
     try {
-        const res = await generateSmartContent(`Analyze the sentiment of this text (Student Report). Return ONLY one word: 'positive', 'negative', or 'neutral'. Text: "${text}"`);
+        const config = getAIConfig();
+        if (!config.apiKey) return 'neutral';
+        // Use Flash for simple sentiment analysis to keep it fast and low cost
+        const ai = new GoogleGenAI({ apiKey: config.apiKey });
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `Analyze the sentiment of this text (Student Report). Return ONLY one word: 'positive', 'negative', or 'neutral'. Text: "${text}"`
+        });
+        
+        const res = response.text || "";
         const clean = res.trim().toLowerCase();
         if (clean.includes('positive')) return 'positive';
         if (clean.includes('negative')) return 'negative';
@@ -508,13 +576,31 @@ export const getConsecutiveAbsences = async () => {
     });
     return alerts;
 };
-export const resolveAbsenceAlert = async (studentId: string, action: string) => { 
+export const resolveAbsenceAlert = async (studentId: string, action: string, notes?: string) => { 
     await supabase.from('risk_actions').insert({
         student_id: studentId,
         action_type: action,
+        notes: notes,
         resolved_at: new Date().toISOString()
     });
 };
+export const getRiskHistory = async () => {
+    const { data, error } = await supabase.from('risk_actions').select('*').order('resolved_at', { ascending: false });
+    if (error) return [];
+    
+    // Enrich with student data names if possible (doing a client-side join for simplicity here as we load students anyway)
+    const students = await getStudents();
+    return data.map((item: any) => {
+        const student = students.find(s => s.studentId === item.student_id);
+        return {
+            ...item,
+            studentName: student ? student.name : 'طالب غير موجود',
+            grade: student ? student.grade : '',
+            className: student ? student.className : ''
+        };
+    });
+};
+
 export const getBehaviorRecords = async (studentId?: string) => {
     let query = supabase.from('behaviors').select('*'); 
     if (studentId) query = query.eq('student_id', studentId);

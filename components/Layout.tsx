@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
-import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine, LogOut as ExitIcon, Download, Share, BellRing, Loader2 } from 'lucide-react';
+import { Home, FileText, Search, ShieldCheck, LogOut, Menu, X, Users, ClipboardCheck, BarChart2, MessageSquare, BookUser, LayoutGrid, Briefcase, ChevronLeft, ChevronRight, Settings, Sparkles, UserCircle, ScanLine, LogOut as ExitIcon, Download, Share, BellRing, Loader2, Code } from 'lucide-react';
 import { StaffUser, AppNotification } from '../types';
 import { getPendingRequestsCountForStaff, getNotifications, getParentChildren, createNotification } from '../services/storage';
 import ChatBot from './ChatBot';
@@ -462,7 +462,10 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
         {!isSidebarCollapsed && (
           <div className="p-4 text-center text-[10px] text-slate-400 bg-white/50 border-t border-slate-100 shrink-0 hidden md:block backdrop-blur-sm">
             <p className="font-bold">نظام عذر المدرسي v2.0</p>
-            <p className="mt-0.5 truncate px-2 opacity-70">صُنع بحب وإتقان ❤️</p>
+            <div className="mt-1 flex items-center justify-center gap-1 opacity-70">
+                <span>ياسر الهذلي</span>
+                <Code size={12} />
+            </div>
           </div>
         )}
       </aside>

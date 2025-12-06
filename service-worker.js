@@ -1,6 +1,6 @@
 
 // Service Worker for PWA & Push Notifications
-const CACHE_NAME = 'ozr-pwa-v3';
+const CACHE_NAME = 'ozr-pwa-v4';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -33,30 +33,44 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Only cache GET requests
   if (event.request.method !== 'GET') return;
   
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        if (response) {
-          return response;
-        }
+        if (response) return response;
         return fetch(event.request).then((response) => {
-            // Check if we received a valid response
             if (!response || response.status !== 200 || response.type !== 'basic') {
               return response;
             }
-            // Clone the response
             const responseToCache = response.clone();
-            caches.open(CACHE_NAME)
-              .then((cache) => {
+            caches.open(CACHE_NAME).then((cache) => {
                 cache.put(event.request, responseToCache);
-              });
+            });
             return response;
         });
       })
   );
+});
+
+// --- HANDLE MESSAGES FROM CLIENT (For Test Notifications) ---
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    const title = event.data.title || 'تنبيه تجريبي';
+    const options = event.data.options || {};
+    
+    // Force these options for better mobile experience
+    const finalOptions = {
+        ...options,
+        icon: 'https://www.raed.net/img?id=1471924',
+        badge: 'https://www.raed.net/img?id=1471924',
+        vibrate: [200, 100, 200],
+        requireInteraction: true,
+        data: { url: self.location.origin }
+    };
+
+    self.registration.showNotification(title, finalOptions);
+  }
 });
 
 // --- PUSH NOTIFICATION HANDLER ---
@@ -79,11 +93,11 @@ self.addEventListener('push', function(event) {
   const title = data.title || "مدرسة عماد الدين زنكي";
   const options = {
     body: data.body,
-    icon: 'https://www.raed.net/img?id=1471924', // Use absolute URL for icons
+    icon: 'https://www.raed.net/img?id=1471924',
     badge: 'https://www.raed.net/img?id=1471924',
     vibrate: [200, 100, 200],
-    requireInteraction: true, // Important for mobile to keep notification visible
-    tag: 'renotify', // Replace old notifications
+    requireInteraction: true,
+    tag: 'renotify',
     renotify: true,
     data: {
       url: self.location.origin
@@ -102,20 +116,17 @@ self.addEventListener('push', function(event) {
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   
-  // Open the app and navigate to root
   event.waitUntil(
     clients.matchAll({
       type: "window",
       includeUncontrolled: true
     }).then(function(clientList) {
-      // If a window is already open, focus it
       for (let i = 0; i < clientList.length; i++) {
         let client = clientList[i];
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           return client.focus();
         }
       }
-      // If no window is open, open a new one
       if (clients.openWindow) {
         return clients.openWindow('/');
       }

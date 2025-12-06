@@ -119,12 +119,27 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
           renotify: true
       };
 
-      if ('serviceWorker' in navigator) {
+      // 1. Try Service Worker Message (Best for Mobile reliability)
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              title: title,
+              options: options
+          });
+      } 
+      // 2. Fallback to standard SW showNotification
+      else if ('serviceWorker' in navigator) {
          navigator.serviceWorker.ready.then(registration => {
             registration.showNotification(title, options);
          });
-      } else {
-          new Notification(title, options);
+      } 
+      // 3. Last Resort (Desktop usually)
+      else {
+          try {
+            new Notification(title, options);
+          } catch(e) {
+            console.error("Notification Error", e);
+          }
       }
   };
 
@@ -145,28 +160,32 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
 
         // 2. Trigger System Notification (The one that appears on lock screen / status bar)
         if (Notification.permission === 'granted') {
-            const title = notif.title;
-            const options: NotificationOptions = {
-                body: notif.message,
-                icon: SCHOOL_LOGO,
-                badge: SCHOOL_LOGO, // Android small icon
-                tag: 'school-alert-' + Date.now(), // Unique Tag to force new notification
-                // @ts-ignore
-                renotify: true,
-                requireInteraction: true, // Keep it visible until dismissed
-                data: { url: window.location.origin }, // For click handling
-                // @ts-ignore
-                vibrate: [200, 100, 200]
-            };
-
-            // CRITICAL: Use Service Worker for robust notifications on Android/Mobile
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.ready.then(registration => {
-                    registration.showNotification(title, options);
+            // Use postMessage to Service Worker for consistency
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'SHOW_NOTIFICATION',
+                    title: notif.title,
+                    options: { 
+                        body: notif.message,
+                        tag: 'school-alert-' + Date.now(),
+                        data: { url: window.location.origin }
+                    }
                 });
             } else {
-                // Fallback for standard web (Desktop mainly)
-                new Notification(title, options);
+                // Fallback
+                const options: NotificationOptions = {
+                    body: notif.message,
+                    icon: SCHOOL_LOGO,
+                    badge: SCHOOL_LOGO,
+                    tag: 'school-alert-' + Date.now(),
+                    // @ts-ignore
+                    renotify: true,
+                    requireInteraction: true,
+                    data: { url: window.location.origin },
+                    // @ts-ignore
+                    vibrate: [200, 100, 200]
+                };
+                new Notification(notif.title, options);
             }
         }
         

@@ -12,7 +12,7 @@ import {
   acknowledgeObservation, getParentChildren, linkParentToStudent, 
   getNotifications, markNotificationRead, getStudentPoints, getSchoolNews, generateSmartStudentReport,
   getAvailableSlots, bookAppointment, getMyAppointments, getMyExitPermissions, getStudentsByPhone,
-  checkParentRegistration // Import new function
+  checkParentRegistration 
 } from '../services/storage';
 import { subscribeToPushNotifications, checkPushPermission } from '../services/pushService';
 import { 
@@ -30,7 +30,7 @@ const Inquiry: React.FC = () => {
   const [parentCivilId, setParentCivilId] = useState(localStorage.getItem('ozr_parent_id') || '');
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('ozr_parent_id'));
   const [authLoading, setAuthLoading] = useState(false);
-  const [loginMessage, setLoginMessage] = useState(''); // New state for login feedback
+  const [loginMessage, setLoginMessage] = useState(''); 
   
   const [myChildren, setMyChildren] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -96,7 +96,6 @@ const Inquiry: React.FC = () => {
       setLoginMessage('جاري التحقق من الهوية...');
 
       try {
-          // Check if parent ID exists in DB
           const exists = await checkParentRegistration(parentCivilId);
           
           if (exists) {
@@ -105,7 +104,6 @@ const Inquiry: React.FC = () => {
               setLoginMessage('حساب جديد، جاري تهيئة الدخول...');
           }
 
-          // Small delay for UX so user reads message
           setTimeout(async () => {
               localStorage.setItem('ozr_parent_id', parentCivilId);
               setIsAuthenticated(true);
@@ -116,7 +114,6 @@ const Inquiry: React.FC = () => {
 
       } catch (error) {
           console.error("Login Check Error", error);
-          // Fallback allow login
           localStorage.setItem('ozr_parent_id', parentCivilId);
           setIsAuthenticated(true);
           setAuthLoading(false);
@@ -151,20 +148,13 @@ const Inquiry: React.FC = () => {
       if (!isAuthenticated || !parentCivilId) return;
 
       const fetchLatestNotifications = async () => {
-          // Fetch parent notifications
           const myNotifs = await getNotifications(parentCivilId);
-          
-          // Fetch children notifications (looping through all linked children)
           let childrenNotifs: AppNotification[] = [];
           for (const child of myChildren) {
               const cn = await getNotifications(child.studentId);
               childrenNotifs = [...childrenNotifs, ...cn];
           }
-
-          // Fetch Global Notifications
           const globalNotifs = await getNotifications('ALL');
-
-          // Merge and Dedup
           const all = [...myNotifs, ...childrenNotifs, ...globalNotifs];
           const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
           const sorted = unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -172,10 +162,8 @@ const Inquiry: React.FC = () => {
           setNotifications(sorted);
       };
 
-      // 1. Initial Fetch
       fetchLatestNotifications();
 
-      // 2. Realtime Listener
       const channel = supabase.channel('public:notifications').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
           const newNotif = payload.new as AppNotification;
           const isMine = newNotif.targetUserId === parentCivilId;
@@ -185,27 +173,20 @@ const Inquiry: React.FC = () => {
           if (isMine || isMyChild || isGlobal) {
               setNotifications(prev => [newNotif, ...prev]);
               
-              // TRIGGER MOBILE NOTIFICATION (Service Worker)
-              if (Notification.permission === 'granted' && 'serviceWorker' in navigator) {
-                  navigator.serviceWorker.ready.then(registration => {
-                      registration.showNotification(newNotif.title, {
-                          body: newNotif.message,
-                          icon: SCHOOL_LOGO,
-                          badge: SCHOOL_LOGO,
-                          // @ts-ignore
-                          vibrate: [200, 100, 200], // Vibrate phone
-                          requireInteraction: true,  // Keep notification visible
-                          data: { url: window.location.origin }
+              if (Notification.permission === 'granted') {
+                  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                      navigator.serviceWorker.controller.postMessage({
+                          type: 'SHOW_NOTIFICATION',
+                          title: newNotif.title,
+                          options: { body: newNotif.message }
                       });
-                  });
-              } else if (Notification.permission === 'granted') {
-                  // Fallback for Desktop if SW fails
-                  new Notification(newNotif.title, { body: newNotif.message, icon: SCHOOL_LOGO });
+                  } else {
+                      new Notification(newNotif.title, { body: newNotif.message, icon: SCHOOL_LOGO });
+                  }
               }
           }
       }).subscribe();
 
-      // 3. Polling Fallback (Every 15s) to guarantee arrival
       const interval = setInterval(fetchLatestNotifications, 15000);
 
       return () => { 
@@ -214,7 +195,7 @@ const Inquiry: React.FC = () => {
       };
   }, [isAuthenticated, parentCivilId, myChildren]);
 
-  const sendTestNotification = () => {
+  const sendTestNotification = async () => {
       const title = "تجربة التنبيهات";
       const options = {
           body: "هذا إشعار تجريبي للتأكد من عمل النظام على جوالك.",
@@ -225,12 +206,34 @@ const Inquiry: React.FC = () => {
           renotify: true
       };
 
-      if ('serviceWorker' in navigator) {
-         navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification(title, options);
-         });
+      // 1. Ensure permission
+      if (Notification.permission !== 'granted') {
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') {
+              alert("تم رفض إذن الإشعارات من إعدادات المتصفح.");
+              return;
+          }
+      }
+
+      // 2. Try Service Worker Message (Best for Mobile)
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              title: title,
+              options: options
+          });
+      } else if ('serviceWorker' in navigator) {
+          // SW exists but no controller yet, try waiting for ready
+          navigator.serviceWorker.ready.then((registration) => {
+              registration.showNotification(title, options);
+          });
       } else {
-          new Notification(title, options);
+          // Fallback
+          try {
+              new Notification(title, options);
+          } catch(e) {
+              alert("تعذر إظهار الإشعار. تأكد من إعدادات الموقع في المتصفح.");
+          }
       }
   };
 
@@ -240,10 +243,10 @@ const Inquiry: React.FC = () => {
           const permission = await Notification.requestPermission();
           if (permission === 'granted') { 
               setPushStatus('granted'); 
-              sendTestNotification();
-              alert("تم تفعيل الإشعارات بنجاح! تم إرسال إشعار تجريبي للتأكد."); 
+              await sendTestNotification(); // Send immediately
+              alert("تم تفعيل الإشعارات بنجاح!"); 
           } 
-          else { alert("تم رفض الإذن. يرجى تفعيله من إعدادات المتصفح."); }
+          else { alert("تم رفض الإذن. يرجى تفعيله يدوياً من إعدادات المتصفح (القفل بجانب الرابط)."); }
       } catch (e) { alert("تعذر تفعيل الإشعارات."); } 
       finally { setPushLoading(false); }
   };
@@ -266,7 +269,7 @@ const Inquiry: React.FC = () => {
       } catch (e) { alert("حدث خطأ."); } finally { setLoading(false); } 
   };
   
-  // ... (Rest of the component remains unchanged) ...
+  // ... (Rest of the component logic remains identical) ...
   const handleSelectStudent = async (student: Student) => {
       setSelectedStudent(student);
       setLoading(true);
@@ -301,13 +304,11 @@ const Inquiry: React.FC = () => {
       if (!attendanceHistory.length) return [];
       return attendanceHistory.filter(record => {
           if (record.status !== AttendanceStatus.ABSENT) return false;
-          // Check if there is an approved or pending excuse for this date
           const hasRequest = history.some(req => req.date === record.date && req.status !== RequestStatus.REJECTED);
           return !hasRequest;
       });
   }, [attendanceHistory, history]);
 
-  // Derived Stats for Summary
   const summaryStats = useMemo(() => {
       const present = attendanceHistory.filter(x => x.status === AttendanceStatus.PRESENT).length;
       const late = attendanceHistory.filter(x => x.status === AttendanceStatus.LATE).length;

@@ -120,27 +120,73 @@ const Inquiry: React.FC = () => {
 
   useEffect(() => { if (isAuthenticated) loadParentDashboard(); }, [isAuthenticated]);
 
-  // Realtime
+  // Realtime & Polling for Notifications
   useEffect(() => {
       if (!isAuthenticated || !parentCivilId) return;
+
+      const fetchLatestNotifications = async () => {
+          // Fetch parent notifications
+          const myNotifs = await getNotifications(parentCivilId);
+          
+          // Fetch children notifications (looping through all linked children)
+          // Note: In a real app with many children, this should be a single query with OR logic
+          let childrenNotifs: AppNotification[] = [];
+          for (const child of myChildren) {
+              const cn = await getNotifications(child.studentId);
+              childrenNotifs = [...childrenNotifs, ...cn];
+          }
+
+          // Fetch Global Notifications
+          const globalNotifs = await getNotifications('ALL');
+
+          // Merge and Dedup
+          const all = [...myNotifs, ...childrenNotifs, ...globalNotifs];
+          const unique = Array.from(new Map(all.map(item => [item.id, item])).values());
+          const sorted = unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          
+          setNotifications(sorted);
+      };
+
+      // 1. Initial Fetch
+      fetchLatestNotifications();
+
+      // 2. Realtime Listener
       const channel = supabase.channel('public:notifications').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
           const newNotif = payload.new as AppNotification;
           const isMine = newNotif.targetUserId === parentCivilId;
           const isMyChild = myChildren.some(child => child.studentId === newNotif.targetUserId);
           const isGlobal = newNotif.targetUserId === 'ALL';
+          
           if (isMine || isMyChild || isGlobal) {
               setNotifications(prev => [newNotif, ...prev]);
-              if (Notification.permission === 'granted') new Notification(newNotif.title, { body: newNotif.message, icon: SCHOOL_LOGO });
+              if (Notification.permission === 'granted') {
+                  new Notification(newNotif.title, { body: newNotif.message, icon: SCHOOL_LOGO });
+              }
           }
       }).subscribe();
-      return () => { supabase.removeChannel(channel); };
+
+      // 3. Polling Fallback (Every 15s) to guarantee arrival
+      const interval = setInterval(fetchLatestNotifications, 15000);
+
+      return () => { 
+          supabase.removeChannel(channel); 
+          clearInterval(interval);
+      };
   }, [isAuthenticated, parentCivilId, myChildren]);
 
   const handleEnablePush = async () => {
       setPushLoading(true);
       try {
           const permission = await Notification.requestPermission();
-          if (permission === 'granted') { await subscribeToPushNotifications(parentCivilId); setPushStatus('granted'); alert("تم تفعيل الإشعارات بنجاح!"); } 
+          if (permission === 'granted') { 
+              await subscribeToPushNotifications(parentCivilId); 
+              setPushStatus('granted'); 
+              
+              // Trigger a test notification immediately
+              new Notification("تم تفعيل الإشعارات", { body: "ستصلك التنبيهات المدرسية هنا فوراً.", icon: SCHOOL_LOGO });
+              
+              alert("تم تفعيل الإشعارات بنجاح!"); 
+          } 
           else { alert("تم رفض الإذن."); }
       } catch (e) { alert("تعذر تفعيل الإشعارات."); } 
       finally { setPushLoading(false); }
@@ -380,6 +426,7 @@ const Inquiry: React.FC = () => {
                         {notifications.length === 0 ? <p className="p-6 text-center text-xs text-slate-400">لا توجد إشعارات</p> : notifications.map(n => (
                             <div key={n.id} className={`p-3 border-b text-sm cursor-pointer hover:bg-slate-50 ${!n.isRead?'bg-blue-50/30':''}`} onClick={() => markNotificationRead(n.id)}>
                                 <p className="font-bold mb-1 flex items-center gap-2">{n.type === 'alert' && <AlertTriangle size={12} className="text-red-500"/>}{n.title}</p><p className="text-xs text-slate-500">{n.message}</p>
+                                <span className="text-[10px] text-slate-400 block mt-1">{new Date(n.createdAt).toLocaleTimeString('ar-SA')}</span>
                             </div>
                         ))}
                     </div>

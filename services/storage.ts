@@ -474,6 +474,8 @@ export const saveAttendanceRecord = async (record: AttendanceRecord) => {
     const notificationBatch: any[] = [];
     
     record.records.forEach(stu => {
+        if (!stu.studentId) return; // Skip if invalid ID to prevent DB errors
+
         if (stu.status === AttendanceStatus.ABSENT) {
             notificationBatch.push({
                 target_user_id: stu.studentId, // We use studentId to target the parent
@@ -802,6 +804,7 @@ export const addStudentPoints = async (studentId: string, points: number, reason
 export const getStudentPoints = async (studentId: string): Promise<{total: number, history: StudentPoint[]}> => { const { data, error } = await supabase.from('student_points').select('*').eq('student_id', studentId).order('created_at', { ascending: false }); if (error) return { total: 0, history: [] }; const total = data.reduce((sum: number, item: any) => sum + item.points, 0); const history = data.map((p: any) => ({ id: p.id, studentId: p.student_id, points: p.points, reason: p.reason, type: p.type, createdAt: p.created_at })); return { total, history }; };
 export const getTopStudents = async (limit = 5) => { const { data, error } = await supabase.from('student_points').select('student_id, points'); if (error) return []; const totals: Record<string, number> = {}; data.forEach((row: any) => { totals[row.student_id] = (totals[row.student_id] || 0) + row.points; }); const topIds = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, limit); const result = []; for (const [sid, score] of topIds) { const student = await getStudentByCivilId(sid); if (student) result.push({ ...student, points: score }); } return result; };
 export const createNotification = async (targetId: string, type: 'alert'|'info'|'success', title: string, message: string) => { 
+    if(!targetId) return;
     await supabase.from('notifications').insert({ target_user_id: targetId, type, title, message }); 
 };
 export const sendBatchNotifications = async (targetUserIds: string[], type: 'alert'|'info'|'success', title: string, message: string) => {

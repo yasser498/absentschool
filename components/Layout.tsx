@@ -112,6 +112,11 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
                 icon: SCHOOL_LOGO
             });
          });
+      } else {
+          new Notification("تم تفعيل الإشعارات", {
+              body: "ستصلك التنبيهات المدرسية هنا فوراً.",
+              icon: SCHOOL_LOGO
+          });
       }
     }
   };
@@ -123,6 +128,45 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
     const staffSession = localStorage.getItem('ozr_staff_session');
     let userId = '';
     let childrenIds: string[] = [];
+
+    // Helper to process a notification
+    const handleNotification = (notif: AppNotification) => {
+        // 1. Play Sound (if configured)
+        if (audioRef.current) {
+            audioRef.current.play().catch(() => {});
+        }
+
+        // 2. Trigger System Notification (The one that appears on lock screen / status bar)
+        if (Notification.permission === 'granted') {
+            const title = notif.title;
+            const options: NotificationOptions = {
+                body: notif.message,
+                icon: SCHOOL_LOGO,
+                badge: SCHOOL_LOGO, // Android small icon
+                tag: 'school-alert', // Grouping
+                // @ts-ignore
+                renotify: true,
+                data: { url: window.location.origin }, // For click handling
+                // @ts-ignore
+                vibrate: [200, 100, 200]
+            };
+
+            // Use Service Worker for robust notifications (works better on mobile/PWA)
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.ready.then(registration => {
+                    registration.showNotification(title, options);
+                });
+            } else {
+                // Fallback for standard web
+                new Notification(title, options);
+            }
+        }
+        
+        // 3. Update Badge inside app if staff
+        if (role === 'staff') {
+            setNotificationCount(prev => prev + 1);
+        }
+    };
 
     const setupListener = async () => {
         if (parentId) {
@@ -138,57 +182,36 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
 
         const watchedIds = [userId, ...childrenIds, 'ALL']; // Target User, Their Children, or Global
 
+        // 1. REALTIME LISTENER
         const channel = supabase.channel('global_system_notifications')
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'notifications' },
                 async (payload) => {
                     const newNotif = payload.new as AppNotification;
-                    
-                    // Filter: Is this notification relevant to me?
                     if (watchedIds.includes(newNotif.targetUserId)) {
-                        
-                        // 1. Play Sound (if configured)
-                        if (audioRef.current) {
-                            audioRef.current.play().catch(() => {});
-                        }
-
-                        // 2. Trigger System Notification (The one that appears on lock screen / status bar)
-                        if (Notification.permission === 'granted') {
-                            const title = newNotif.title;
-                            const options: NotificationOptions = {
-                                body: newNotif.message,
-                                icon: SCHOOL_LOGO,
-                                badge: SCHOOL_LOGO, // Android small icon
-                                tag: 'school-alert', // Grouping
-                                // @ts-ignore
-                                renotify: true,
-                                data: { url: window.location.origin }, // For click handling
-                                // @ts-ignore
-                                vibrate: [200, 100, 200]
-                            };
-
-                            // Use Service Worker for robust notifications (works better on mobile/PWA)
-                            if ('serviceWorker' in navigator) {
-                                const registration = await navigator.serviceWorker.ready;
-                                registration.showNotification(title, options);
-                            } else {
-                                // Fallback for standard web
-                                new Notification(title, options);
-                            }
-                        }
-                        
-                        // 3. Update Badge inside app if staff
-                        if (role === 'staff') {
-                            setNotificationCount(prev => prev + 1);
-                        }
+                        handleNotification(newNotif);
                     }
                 }
             )
             .subscribe();
 
+        // 2. POLLING FALLBACK (Every 15 seconds)
+        // This ensures notifications arrive even if Realtime disconnects
+        const pollInterval = setInterval(async () => {
+            // We fetch the latest unread notification. 
+            // In a real production app, we would track "lastCheckedTime" to avoid duplicates.
+            // For simplicity here, we rely on the badge count update and let the user open the panel to see details.
+            if (role === 'staff') {
+                const notifs = await getNotifications(userId);
+                const unread = notifs.filter((n: any) => !n.isRead).length;
+                setNotificationCount(unread);
+            }
+        }, 15000);
+
         return () => {
             supabase.removeChannel(channel);
+            clearInterval(pollInterval);
         };
     };
 

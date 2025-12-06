@@ -195,55 +195,12 @@ const Inquiry: React.FC = () => {
       };
   }, [isAuthenticated, parentCivilId, myChildren]);
 
-  const sendTestNotification = async () => {
-      const title = "تجربة التنبيهات";
-      const options = {
-          body: "هذا إشعار تجريبي للتأكد من عمل النظام على جوالك.",
-          icon: SCHOOL_LOGO,
-          badge: SCHOOL_LOGO,
-          vibrate: [200, 100, 200],
-          tag: 'test-notification',
-          renotify: true
-      };
-
-      // 1. Ensure permission
-      if (Notification.permission !== 'granted') {
-          const perm = await Notification.requestPermission();
-          if (perm !== 'granted') {
-              alert("تم رفض إذن الإشعارات من إعدادات المتصفح.");
-              return;
-          }
-      }
-
-      // 2. Try Service Worker Message (Best for Mobile)
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({
-              type: 'SHOW_NOTIFICATION',
-              title: title,
-              options: options
-          });
-      } else if ('serviceWorker' in navigator) {
-          // SW exists but no controller yet, try waiting for ready
-          navigator.serviceWorker.ready.then((registration) => {
-              registration.showNotification(title, options);
-          });
-      } else {
-          // Fallback
-          try {
-              new Notification(title, options);
-          } catch(e) {
-              alert("تعذر إظهار الإشعار. تأكد من إعدادات الموقع في المتصفح.");
-          }
-      }
-  };
-
   const handleEnablePush = async () => {
       setPushLoading(true);
       try {
           const permission = await Notification.requestPermission();
           if (permission === 'granted') { 
               setPushStatus('granted'); 
-              await sendTestNotification(); // Send immediately
               alert("تم تفعيل الإشعارات بنجاح!"); 
           } 
           else { alert("تم رفض الإذن. يرجى تفعيله يدوياً من إعدادات المتصفح (القفل بجانب الرابط)."); }
@@ -474,7 +431,6 @@ const Inquiry: React.FC = () => {
                 <div className="flex items-center gap-2 font-bold text-slate-800"><Users size={20} className="text-blue-600"/><span className="hidden md:inline">بوابة ولي الأمر</span></div>
                 <div className="flex items-center gap-2">
                     {pushStatus !== 'granted' && <button onClick={handleEnablePush} disabled={pushLoading} className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1">{pushLoading ? <Loader2 size={12}/> : <BellRing size={12}/>} تفعيل التنبيهات</button>}
-                    {pushStatus === 'granted' && <button onClick={sendTestNotification} className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 hover:bg-amber-200"><Zap size={12}/> تجربة</button>}
                     <button onClick={() => setShowNotifications(!showNotifications)} className="relative p-2 rounded-full hover:bg-slate-50"><Bell size={24} className="text-slate-600"/>{notifications.filter(n=>!n.isRead).length > 0 && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-bounce"></span>}</button>
                     <button onClick={handleLogout} className="p-2 rounded-full text-red-500 hover:bg-red-50"><LogOut size={20}/></button>
                 </div>

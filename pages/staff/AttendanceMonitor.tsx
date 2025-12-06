@@ -203,8 +203,16 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
       alert(`تم تسجيل الإجراء: ${action}`);
   };
 
-  const handleCloseCase = async (student: Student, note: string) => {
-      if(!confirm(`هل أنت متأكد من إغلاق حالة الطالب ${student.name}؟ لن يظهر في القائمة حتى يتغيب مجدداً.`)) return;
+  const handleCloseCase = async (student: Student) => {
+      // Prompt for reason to ensure DB column gets data and deputy has audit trail
+      const note = prompt(`الرجاء كتابة سبب إغلاق حالة الطالب ${student.name} (مطلوب):`, "تم التواصل مع ولي الأمر...");
+      
+      if (note === null) return; // User cancelled
+      if (!note.trim()) {
+          alert("لا يمكن إغلاق الحالة بدون ذكر السبب.");
+          return;
+      }
+
       try {
           await resolveAbsenceAlert(student.studentId, 'closed', note);
           alert("تم إغلاق الحالة ونقلها للمتابعة.");
@@ -458,7 +466,7 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
                               <button onClick={() => handleReferToCounselor(item.student, item.dates)} className="flex-1 bg-purple-600 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-purple-700">
                                   <Forward size={14}/> تحويل
                               </button>
-                              <button onClick={() => handleCloseCase(item.student, 'تم التواصل والاكتفاء بالتنبيه')} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-emerald-700">
+                              <button onClick={() => handleCloseCase(item.student)} className="flex-1 bg-emerald-600 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-emerald-700">
                                   <CheckCircle size={14}/> إغلاق
                               </button>
                           </div>
@@ -518,7 +526,7 @@ const AttendanceMonitor: React.FC<AttendanceMonitorProps> = ({ onPrintAction }) 
                                               <Forward size={14}/> تحويل
                                           </button>
                                           <button 
-                                            onClick={() => handleCloseCase(item.student, 'تم اتخاذ اللازم')}
+                                            onClick={() => handleCloseCase(item.student)}
                                             className="flex items-center gap-1 bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-emerald-700 shadow-sm"
                                           >
                                               <CheckCircle size={14}/> إغلاق

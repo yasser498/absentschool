@@ -103,44 +103,6 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
     }
     const permission = await Notification.requestPermission();
     setNotifPermission(permission);
-    if (permission === 'granted') {
-        sendTestNotification();
-    }
-  };
-
-  const sendTestNotification = () => {
-      const title = "تجربة التنبيهات";
-      const options = {
-          body: "هذا إشعار تجريبي للتأكد من عمل النظام على جوالك.",
-          icon: SCHOOL_LOGO,
-          badge: SCHOOL_LOGO,
-          vibrate: [200, 100, 200],
-          tag: 'test-notification',
-          renotify: true
-      };
-
-      // 1. Try Service Worker Message (Best for Mobile reliability)
-      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({
-              type: 'SHOW_NOTIFICATION',
-              title: title,
-              options: options
-          });
-      } 
-      // 2. Fallback to standard SW showNotification
-      else if ('serviceWorker' in navigator) {
-         navigator.serviceWorker.ready.then(registration => {
-            registration.showNotification(title, options);
-         });
-      } 
-      // 3. Last Resort (Desktop usually)
-      else {
-          try {
-            new Notification(title, options);
-          } catch(e) {
-            console.error("Notification Error", e);
-          }
-      }
   };
 
   // --- GLOBAL REALTIME NOTIFICATIONS (System Level) ---
@@ -489,20 +451,10 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
             </>
           )}
 
-          {/* TEST NOTIFICATION BUTTON (Always Visible if installed) */}
-          <div className="my-2 border-t border-slate-100 mx-4"></div>
-          <button
-              onClick={sendTestNotification}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-amber-600 hover:bg-amber-50 transition-colors duration-200 font-bold shrink-0 ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}
-              title="تجربة التنبيهات"
-          >
-              <Zap size={22} className="shrink-0" />
-              {!isSidebarCollapsed && <span>تجربة التنبيهات</span>}
-          </button>
-
           {/* INSTALL APP BUTTON (Visible if not installed) */}
           {!isInstalled && (
             <>
+                <div className="my-2 border-t border-slate-100 mx-4"></div>
                 <button
                     onClick={handleInstallClick}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition-colors duration-200 font-bold shrink-0 ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}

@@ -29,44 +29,99 @@ export const invalidateCache = (key: string) => {
 // --- AI Configuration ---
 export interface AIConfig { provider: 'google' | 'openai_compatible'; apiKey: string; baseUrl?: string; model: string; }
 
-export const getAIConfig = (): AIConfig => {
-  // Directly use the environment variable as per system requirements
-  // process.env.API_KEY is replaced by Vite at build time
-  const apiKey = process.env.API_KEY || '';
-  return { provider: 'google', apiKey, model: 'gemini-3-pro-preview' };
+// Hardcoded fallback to ensure immediate operation as per user request
+const FALLBACK_KEY = "AIzaSyBeIsIrMvAA3dSRPxuSsxpJ0fzo3V8EuYk";
+
+export const getAIConfig = async (): Promise<AIConfig> => {
+  // 1. Check LocalStorage (For Admin Override/Testing)
+  const stored = localStorage.getItem('ozr_ai_config');
+  if (stored) return JSON.parse(stored);
+
+  let apiKey = '';
+  let provider = 'google';
+  let model = 'gemini-3-pro-preview';
+
+  // 2. Try fetching from Supabase System Settings (Dynamic Configuration)
+  try {
+      const { data } = await supabase.from('system_settings').select('key, value').in('key', ['ai_api_key', 'ai_provider', 'ai_model']);
+      if (data && data.length > 0) {
+          const settings: Record<string, string> = {};
+          data.forEach((row: any) => settings[row.key] = row.value);
+          
+          if (settings.ai_api_key) apiKey = settings.ai_api_key;
+          if (settings.ai_provider) provider = settings.ai_provider;
+          if (settings.ai_model) model = settings.ai_model;
+      }
+  } catch (e) {
+      // Silent fail on DB, will fall through to other methods
+      console.debug('Failed to fetch system settings', e);
+  }
+
+  // 3. Try Environment Variables
+  if (!apiKey) {
+      try {
+        // @ts-ignore
+        if (typeof process !== 'undefined' && process.env?.API_KEY) {
+            // @ts-ignore
+            apiKey = process.env.API_KEY;
+        }
+      } catch (e) { }
+  }
+
+  // 4. Final Fallback (Hardcoded Key)
+  if (!apiKey) {
+      apiKey = FALLBACK_KEY;
+  }
+
+  return { provider: provider as any, apiKey, model };
 };
 
-export const generateSmartContent = async (prompt: string, systemInstruction?: string, model: string = 'gemini-3-pro-preview'): Promise<string> => {
+export const generateSmartContent = async (prompt: string, systemInstruction?: string, modelOverride?: string): Promise<string> => {
   try {
-    const config = getAIConfig();
+    const config = await getAIConfig();
     
     if (!config.apiKey) {
         console.warn("AI Feature Skipped: API Key is missing.");
-        return "عذراً، خدمة الذكاء الاصطناعي غير مفعلة حالياً (المفتاح مفقود).";
+        return "عذراً، خدمة الذكاء الاصطناعي غير مفعلة حالياً.";
     }
 
-    const ai = new GoogleGenAI({ apiKey: config.apiKey });
-    
-    // Adjust config based on model
-    const genConfig: any = { systemInstruction };
-    
-    // Thinking config is only for 2.5 series or 3-pro if needed for deep reasoning
-    // For simple text tasks using Flash, we might not need thinkingBudget or set it to 0
-    if (model.includes('flash')) {
-        genConfig.thinkingConfig = { thinkingBudget: 0 }; // Disable thinking for speed
-    } else {
-        genConfig.thinkingConfig = { thinkingBudget: 2048 }; // Default thinking for Pro
+    // --- Google Gemini Provider ---
+    if (config.provider === 'google') {
+        const ai = new GoogleGenAI({ apiKey: config.apiKey });
+        const targetModel = modelOverride || config.model || 'gemini-3-pro-preview';
+        
+        const genConfig: any = { systemInstruction };
+        
+        // Optimize thinking budget based on model family
+        if (targetModel.includes('flash')) {
+            genConfig.thinkingConfig = { thinkingBudget: 0 }; 
+        } else {
+            // Default thinking budget for Pro models
+            genConfig.thinkingConfig = { thinkingBudget: 1024 }; 
+        }
+
+        const response = await ai.models.generateContent({ 
+            model: targetModel, 
+            contents: prompt, 
+            config: genConfig
+        });
+        return response.text || "";
     }
 
-    const response = await ai.models.generateContent({ 
-        model: model, 
-        contents: prompt, 
-        config: genConfig
-    });
-    return response.text || "";
+    // --- OpenAI / DeepSeek Provider (Future Expansion) ---
+    if (config.provider === 'openai_compatible') {
+        // This block is ready for future implementation of DeepSeek/GPT via standard OpenAI-like API
+        // You would use fetch() here to call the endpoint defined in config.baseUrl
+        return "تم إعداد النظام لدعم هذا المزود، ولكن لم يتم تفعيله بعد.";
+    }
+
+    return "";
   } catch (error: any) { 
       console.error("AI Error:", error);
-      return "تعذر الاتصال بخدمة الذكاء الاصطناعي. يرجى المحاولة لاحقاً."; 
+      if (error.message && error.message.includes('429')) {
+          return "عذراً، النظام مشغول جداً حالياً (تجاوز الحد المسموح للاستخدام اليومي). يرجى المحاولة لاحقاً.";
+      }
+      return "تعذر الاتصال بخدمة الذكاء الاصطناعي."; 
   }
 };
 
@@ -307,10 +362,10 @@ export const generateUserSpecificBotContext = async (): Promise<{role: string, c
 
 export const analyzeSentiment = async (text: string): Promise<'positive' | 'negative' | 'neutral'> => {
     try {
-        const config = getAIConfig();
+        // Need to wait for config in case it's fetched from DB
+        const config = await getAIConfig();
         if(!config.apiKey) return 'neutral';
 
-        // Use Flash for simple sentiment analysis
         const ai = new GoogleGenAI({ apiKey: config.apiKey });
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -686,4 +741,181 @@ export const completeExitPermission = async (id: string) => {
     const { error } = await supabase.from('exit_permissions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', id); 
     if (error) throw new Error(error.message); 
     
-    const { data: perm } = await supabase.from('exit_permissions').select('student_id, student_name').eq('id', id
+    const { data: perm } = await supabase.from('exit_permissions').select('student_id, student_name').eq('id', id).single();
+    if (perm) {
+        await createNotification(perm.student_id, 'info', 'خروج طالب', `تم تسجيل خروج الطالب ${perm.student_name} من البوابة الآن.`);
+    }
+};
+
+export const getAvailableSlots = async (date?: string) => { let query = supabase.from('appointment_slots').select('*'); if (date) query = query.eq('date', date); else { const today = new Date().toISOString().split('T')[0]; query = query.gte('date', today); } const { data, error } = await query.order('date', { ascending: true }).order('start_time', { ascending: true }); if (error) return []; return data.map((s: any) => ({ id: s.id, date: s.date, startTime: s.start_time, endTime: s.end_time, maxCapacity: s.max_capacity, currentBookings: s.current_bookings })); };
+export const generateDefaultAppointmentSlots = async (date: string) => { 
+    const slots = []; 
+    const startHour = 8; 
+    const startMinute = 0; 
+    const endHour = 11; 
+    let current = new Date(`${date}T${startHour.toString().padStart(2,'0')}:${startMinute.toString().padStart(2,'0')}:00`); 
+    const end = new Date(`${date}T${endHour.toString().padStart(2,'0')}:00:00`); 
+    
+    while (current < end) { 
+        const startTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}); 
+        current.setMinutes(current.getMinutes() + 30); 
+        const endTime = current.toLocaleTimeString('en-GB', {hour: '2-digit', minute:'2-digit'}); 
+        slots.push({ date: date, start_time: startTime, end_time: endTime, max_capacity: 3, current_bookings: 0 }); 
+    } 
+    const { error } = await supabase.from('appointment_slots').insert(slots); 
+    if (error) throw new Error(error.message); 
+};
+export const addAppointmentSlot = async (slot: Omit<AppointmentSlot, 'id' | 'currentBookings'>) => { const { error } = await supabase.from('appointment_slots').insert({ date: slot.date, start_time: slot.startTime, end_time: slot.endTime, max_capacity: slot.maxCapacity }); if (error) throw new Error(error.message); };
+export const updateAppointmentSlot = async (slot: AppointmentSlot) => { const { error } = await supabase.from('appointment_slots').update({ start_time: slot.startTime, end_time: slot.endTime, max_capacity: slot.maxCapacity }).eq('id', slot.id); if (error) throw new Error(error.message); };
+export const deleteAppointmentSlot = async (id: string) => { const { error } = await supabase.from('appointment_slots').delete().eq('id', id); if (error) throw new Error(error.message); };
+export const bookAppointment = async (appt: Omit<Appointment, 'id' | 'status' | 'createdAt'>) => { const { data: slot, error: slotError } = await supabase.from('appointment_slots').select('*').eq('id', appt.slotId).single(); if (slotError || !slot) throw new Error("الموعد غير موجود"); if (slot.current_bookings >= slot.max_capacity) throw new Error("عفواً، اكتمل العدد لهذا الموعد"); const { data: newAppt, error: bookError } = await supabase.from('appointments').insert({ slot_id: appt.slotId, student_id: appt.studentId, student_name: appt.studentName, parent_name: appt.parentName, parent_civil_id: appt.parentCivilId, visit_reason: appt.visitReason }).select().single(); if (bookError) throw new Error(bookError.message); await supabase.from('appointment_slots').update({ current_bookings: slot.current_bookings + 1 }).eq('id', appt.slotId); return { id: newAppt.id, slotId: newAppt.slot_id, studentId: newAppt.student_id, studentName: newAppt.student_name, parentName: newAppt.parent_name, parentCivilId: newAppt.parent_civil_id, visitReason: newAppt.visit_reason, status: newAppt.status, createdAt: newAppt.created_at, slot: { id: slot.id, date: slot.date, startTime: slot.start_time, endTime: slot.end_time, maxCapacity: slot.max_capacity, currentBookings: slot.current_bookings + 1 } }; };
+export const getMyAppointments = async (parentCivilId: string) => { const { data, error } = await supabase.from('appointments').select(`*, slot:appointment_slots(*)`).eq('parent_civil_id', parentCivilId).order('created_at', { ascending: false }); if (error) return []; return data.map((a: any) => ({ id: a.id, slotId: a.slot_id, studentId: a.student_id, studentName: a.student_name, parentName: a.parent_name, parentCivilId: a.parent_civil_id, visitReason: a.visit_reason, status: a.status, arrivedAt: a.arrived_at, createdAt: a.created_at, slot: a.slot ? { id: a.slot.id, date: a.slot.date, startTime: a.slot.start_time, endTime: a.slot.end_time, maxCapacity: a.slot.max_capacity, currentBookings: a.slot.current_bookings } : undefined })); };
+export const getDailyAppointments = async (date?: string) => { 
+    let query = supabase.from('appointments').select(`*, slot:appointment_slots(*)`); 
+    const { data, error } = await query.order('created_at', { ascending: false }); 
+    if (error) return []; 
+    
+    const mapped = data.map((a: any) => ({ 
+        id: a.id, 
+        slotId: a.slot_id, 
+        studentId: a.student_id, 
+        studentName: a.student_name, 
+        parentName: a.parent_name, 
+        parentCivilId: a.parent_civil_id, 
+        visitReason: a.visit_reason, 
+        status: a.status, 
+        arrivedAt: a.arrived_at, 
+        createdAt: a.created_at, 
+        slot: a.slot ? { 
+            id: a.slot.id, 
+            date: a.slot.date, 
+            startTime: a.slot.start_time, 
+            endTime: a.slot.end_time 
+        } : undefined 
+    })); 
+    
+    if (date) { 
+        return mapped.filter((a: Appointment) => a.slot?.date === date); 
+    } 
+    return mapped; 
+};
+export const checkInVisitor = async (appointmentId: string) => { 
+    const { error } = await supabase.from('appointments').update({ 
+        status: 'completed', 
+        arrived_at: new Date().toISOString() 
+    }).eq('id', appointmentId); 
+    
+    if (error) throw new Error(error.message); 
+    
+    const { data: appt } = await supabase.from('appointments').select('student_id, parent_name').eq('id', appointmentId).single();
+    if(appt) {
+        await createNotification(appt.student_id, 'success', 'تسجيل دخول', `تم تسجيل دخول ولي الأمر ${appt.parent_name} للمدرسة.`);
+    }
+};
+
+export const getSchoolNews = async () => { const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, title: n.title, content: n.content, author: n.author, isUrgent: n.is_urgent, createdAt: n.created_at })); };
+export const addSchoolNews = async (news: Omit<SchoolNews, 'id' | 'createdAt'>) => { 
+    const { error } = await supabase.from('news').insert({ title: news.title, content: news.content, author: news.author, is_urgent: news.isUrgent }); 
+    if (error) throw new Error(error.message); 
+    
+    if (news.isUrgent) {
+        await createNotification('ALL', 'alert', 'خبر عاجل', `${news.title}: ${news.content}`);
+    }
+};
+export const updateSchoolNews = async (news: SchoolNews) => { const { error } = await supabase.from('news').update({ title: news.title, content: news.content, is_urgent: news.isUrgent }).eq('id', news.id); if (error) throw new Error(error.message); };
+export const deleteSchoolNews = async (id: string) => { const { error } = await supabase.from('news').delete().eq('id', id); if (error) throw new Error(error.message); };
+
+export const linkParentToStudent = async (parentCivilId: string, studentId: string) => { const { data } = await supabase.from('parent_links').select('*').eq('parent_civil_id', parentCivilId).eq('student_id', studentId); if (data && data.length > 0) return; const { error } = await supabase.from('parent_links').insert({ parent_civil_id: parentCivilId, student_id: studentId }); if (error) throw new Error(error.message); };
+export const getParentChildren = async (parentCivilId: string): Promise<Student[]> => { const { data: links, error } = await supabase.from('parent_links').select('student_id').eq('parent_civil_id', parentCivilId); if (error) return []; if (!links || links.length === 0) return []; const studentIds = links.map((l: any) => l.student_id); const { data: students, error: err2 } = await supabase.from('students').select('*').in('student_id', studentIds); if (err2) return []; return students.map(mapStudentFromDB); };
+export const addStudentPoints = async (studentId: string, points: number, reason: string, type: 'behavior' | 'attendance' | 'academic') => { const { error } = await supabase.from('student_points').insert({ student_id: studentId, points, reason, type }); if (error) throw new Error(error.message); await createNotification(studentId, 'info', 'نقاط جديدة', `تم إضافة ${points} نقطة لرصيدك: ${reason}`); };
+export const getStudentPoints = async (studentId: string): Promise<{total: number, history: StudentPoint[]}> => { const { data, error } = await supabase.from('student_points').select('*').eq('student_id', studentId).order('created_at', { ascending: false }); if (error) return { total: 0, history: [] }; const total = data.reduce((sum: number, item: any) => sum + item.points, 0); const history = data.map((p: any) => ({ id: p.id, studentId: p.student_id, points: p.points, reason: p.reason, type: p.type, createdAt: p.created_at })); return { total, history }; };
+export const getTopStudents = async (limit = 5) => { const { data, error } = await supabase.from('student_points').select('student_id, points'); if (error) return []; const totals: Record<string, number> = {}; data.forEach((row: any) => { totals[row.student_id] = (totals[row.student_id] || 0) + row.points; }); const topIds = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, limit); const result = []; for (const [sid, score] of topIds) { const student = await getStudentByCivilId(sid); if (student) result.push({ ...student, points: score }); } return result; };
+export const createNotification = async (targetId: string, type: 'alert'|'info'|'success', title: string, message: string) => { 
+    if(!targetId) return;
+    await supabase.from('notifications').insert({ target_user_id: targetId, type, title, message }); 
+};
+export const sendBatchNotifications = async (targetUserIds: string[], type: 'alert'|'info'|'success', title: string, message: string) => {
+    if (targetUserIds.length === 0) return;
+    const notifications = targetUserIds.map(id => ({
+        target_user_id: id,
+        type,
+        title,
+        message
+    }));
+    await supabase.from('notifications').insert(notifications);
+};
+export const getNotifications = async (targetId: string) => { const { data, error } = await supabase.from('notifications').select('*').eq('target_user_id', targetId).order('created_at', { ascending: false }); if (error) return []; return data.map((n: any) => ({ id: n.id, targetUserId: n.target_user_id, title: n.title, message: n.message, isRead: n.is_read, type: n.type, createdAt: n.created_at })); };
+export const markNotificationRead = async (id: string) => { await supabase.from('notifications').update({ is_read: true }).eq('id', id); };
+
+export const checkParentRegistration = async (parentCivilId: string): Promise<boolean> => {
+    const { data, error } = await supabase
+        .from('parent_links')
+        .select('id')
+        .eq('parent_civil_id', parentCivilId)
+        .limit(1);
+    
+    if (error) {
+        console.error("Error checking parent registration:", error);
+        return false;
+    }
+    
+    return data && data.length > 0;
+};
+
+export const generateTeacherAbsenceSummary = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const { data: attendanceData } = await supabase.from('attendance').select('*').eq('date', today);
+    const users = await getStaffUsers();
+    
+    if (!attendanceData || attendanceData.length === 0) return { success: false, message: 'لا يوجد بيانات حضور لهذا اليوم بعد.' };
+
+    const notificationsToSend: any[] = [];
+
+    for (const teacher of users) {
+        let absentCount = 0;
+        const myAssignments = teacher.assignments || [];
+        
+        myAssignments.forEach(assignment => {
+            const classRecord = attendanceData.find((r: any) => r.grade === assignment.grade && r.class_name === assignment.className);
+            if (classRecord && classRecord.records) {
+                absentCount += classRecord.records.filter((stu: any) => stu.status === 'ABSENT').length;
+            }
+        });
+
+        if (absentCount > 0) {
+            notificationsToSend.push({
+                target_user_id: teacher.id,
+                type: 'info',
+                title: 'ملخص الغياب اليومي',
+                message: `تم رصد غياب ${absentCount} طالب في الفصول المسندة إليك اليوم (${today}).`
+            });
+        }
+    }
+
+    if (notificationsToSend.length > 0) {
+        await supabase.from('notifications').insert(notificationsToSend);
+        return { success: true, message: `تم إرسال ${notificationsToSend.length} إشعار للمعلمين.` };
+    }
+    return { success: true, message: 'لم يتم العثور على حالات غياب تستدعي التنبيه.' };
+};
+
+export const sendPendingReferralReminders = async () => {
+    const { data: pendingReferrals } = await supabase.from('referrals').select('*').eq('status', 'pending');
+    if (!pendingReferrals || pendingReferrals.length === 0) return { success: true, message: 'لا توجد إحالات معلقة.' };
+
+    const users = await getStaffUsers();
+    const targetStaff = users.filter(u => u.permissions?.includes('students') || u.permissions?.includes('deputy'));
+    
+    const notificationsToSend = targetStaff.map(staff => ({
+        target_user_id: staff.id,
+        type: 'alert',
+        title: 'تذكير: إحالات معلقة',
+        message: `يوجد ${pendingReferrals.length} إحالة جديدة بانتظار المعالجة. يرجى مراجعة صندوق الوارد.`
+    }));
+
+    if (notificationsToSend.length > 0) {
+        await supabase.from('notifications').insert(notificationsToSend);
+        return { success: true, message: `تم تنبيه ${notificationsToSend.length} من المختصين.` };
+    }
+    return { success: false, message: 'لم يتم العثور على موجهين/وكلاء لإرسال التنبيه.' };
+};

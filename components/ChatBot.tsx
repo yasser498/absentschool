@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Loader2, Sparkles, Bot, User } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
@@ -58,7 +59,7 @@ const ChatBot: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const config = getAIConfig();
+      const config = await getAIConfig();
       if (!config.apiKey) {
         throw new Error("API Key missing");
       }
@@ -85,7 +86,7 @@ const ChatBot: React.FC = () => {
 
       // 3. Call Gemini
       const ai = new GoogleGenAI({ apiKey: config.apiKey });
-      const model = 'gemini-3-pro-preview'; // Use Thinking Model
+      const model = config.model || 'gemini-3-pro-preview';
       
       const history = messages.map(m => ({
         role: m.role,
@@ -96,7 +97,7 @@ const ChatBot: React.FC = () => {
         model: model,
         config: { 
             systemInstruction,
-            thinkingConfig: { thinkingBudget: 32768 } // Max budget for pro
+            thinkingConfig: { thinkingBudget: 1024 } // Set reasoning budget
         },
         history: history
       });

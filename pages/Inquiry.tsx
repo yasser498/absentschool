@@ -129,7 +129,6 @@ const Inquiry: React.FC = () => {
           const myNotifs = await getNotifications(parentCivilId);
           
           // Fetch children notifications (looping through all linked children)
-          // Note: In a real app with many children, this should be a single query with OR logic
           let childrenNotifs: AppNotification[] = [];
           for (const child of myChildren) {
               const cn = await getNotifications(child.studentId);
@@ -159,7 +158,22 @@ const Inquiry: React.FC = () => {
           
           if (isMine || isMyChild || isGlobal) {
               setNotifications(prev => [newNotif, ...prev]);
-              if (Notification.permission === 'granted') {
+              
+              // TRIGGER MOBILE NOTIFICATION (Service Worker)
+              if (Notification.permission === 'granted' && 'serviceWorker' in navigator) {
+                  navigator.serviceWorker.ready.then(registration => {
+                      registration.showNotification(newNotif.title, {
+                          body: newNotif.message,
+                          icon: SCHOOL_LOGO,
+                          badge: SCHOOL_LOGO,
+                          // @ts-ignore
+                          vibrate: [200, 100, 200], // Vibrate phone
+                          requireInteraction: true,  // Keep notification visible
+                          data: { url: window.location.origin }
+                      });
+                  });
+              } else if (Notification.permission === 'granted') {
+                  // Fallback for Desktop if SW fails
                   new Notification(newNotif.title, { body: newNotif.message, icon: SCHOOL_LOGO });
               }
           }
@@ -182,8 +196,17 @@ const Inquiry: React.FC = () => {
               await subscribeToPushNotifications(parentCivilId); 
               setPushStatus('granted'); 
               
-              // Trigger a test notification immediately
-              new Notification("تم تفعيل الإشعارات", { body: "ستصلك التنبيهات المدرسية هنا فوراً.", icon: SCHOOL_LOGO });
+              // Trigger a test notification via Service Worker
+              if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.ready.then(registration => {
+                      registration.showNotification("تم تفعيل الإشعارات", {
+                          body: "ستصلك التنبيهات المدرسية هنا فوراً.",
+                          icon: SCHOOL_LOGO,
+                          // @ts-ignore
+                          vibrate: [200, 100, 200]
+                      });
+                  });
+              }
               
               alert("تم تفعيل الإشعارات بنجاح!"); 
           } 

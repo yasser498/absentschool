@@ -83,7 +83,8 @@ self.addEventListener('push', function(event) {
     body: data.body,
     icon: 'https://www.raed.net/img?id=1471924',
     badge: 'https://www.raed.net/img?id=1471924',
-    vibrate: [100, 50, 100],
+    vibrate: [200, 100, 200],
+    requireInteraction: true,
     data: {
       url: self.location.origin
     },
@@ -101,17 +102,17 @@ self.addEventListener('push', function(event) {
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   
-  // 1. Focus existing window if available, or open new one
+  // This looks to see if the current window is already open and focuses if it is
   event.waitUntil(
     clients.matchAll({
       type: "window",
       includeUncontrolled: true
     }).then(function(clientList) {
-      if (clientList.length > 0) {
-        let client = clientList[0];
-        // If client is visible, focus it
-        if ('focus' in client) {
-            return client.focus();
+      // If a window is already open, focus it
+      for (let i = 0; i < clientList.length; i++) {
+        let client = clientList[i];
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
         }
       }
       // If no window is open, open a new one

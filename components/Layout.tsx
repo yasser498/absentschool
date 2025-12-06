@@ -104,12 +104,14 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
     const permission = await Notification.requestPermission();
     setNotifPermission(permission);
     if (permission === 'granted') {
-      // Send a test notification
+      // Send a test notification using Service Worker if available
       if ('serviceWorker' in navigator) {
          navigator.serviceWorker.ready.then(registration => {
             registration.showNotification("تم تفعيل الإشعارات", {
                 body: "ستصلك التنبيهات المدرسية هنا فوراً.",
-                icon: SCHOOL_LOGO
+                icon: SCHOOL_LOGO,
+                // @ts-ignore
+                vibrate: [200, 100, 200]
             });
          });
       } else {
@@ -143,21 +145,22 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
                 body: notif.message,
                 icon: SCHOOL_LOGO,
                 badge: SCHOOL_LOGO, // Android small icon
-                tag: 'school-alert', // Grouping
+                tag: 'school-alert-' + Date.now(), // Unique Tag to force new notification
                 // @ts-ignore
                 renotify: true,
+                requireInteraction: true, // Keep it visible until dismissed
                 data: { url: window.location.origin }, // For click handling
                 // @ts-ignore
                 vibrate: [200, 100, 200]
             };
 
-            // Use Service Worker for robust notifications (works better on mobile/PWA)
+            // CRITICAL: Use Service Worker for robust notifications on Android/Mobile
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.ready.then(registration => {
                     registration.showNotification(title, options);
                 });
             } else {
-                // Fallback for standard web
+                // Fallback for standard web (Desktop mainly)
                 new Notification(title, options);
             }
         }
@@ -199,9 +202,6 @@ const Layout: React.FC<LayoutProps> = ({ children, role = 'public', onLogout }) 
         // 2. POLLING FALLBACK (Every 15 seconds)
         // This ensures notifications arrive even if Realtime disconnects
         const pollInterval = setInterval(async () => {
-            // We fetch the latest unread notification. 
-            // In a real production app, we would track "lastCheckedTime" to avoid duplicates.
-            // For simplicity here, we rely on the badge count update and let the user open the panel to see details.
             if (role === 'staff') {
                 const notifs = await getNotifications(userId);
                 const unread = notifs.filter((n: any) => !n.isRead).length;

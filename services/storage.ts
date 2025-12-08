@@ -1,4 +1,3 @@
-
 import { supabase } from '../supabaseClient';
 import { 
   Appointment, AppointmentSlot, 
@@ -54,15 +53,21 @@ export const getAIConfig = async (): Promise<AIConfig> => {
       console.debug('Failed to fetch system settings', e);
   }
 
-  // 3. Try Environment Variables
+  // 3. Try Environment Variables (Prioritize Vite Standard)
   if (!apiKey) {
-      try {
-        // @ts-ignore
-        if (typeof process !== 'undefined' && process.env?.API_KEY) {
+      // @ts-ignore
+      const metaEnv = (import.meta as any).env;
+      if (metaEnv?.VITE_GOOGLE_AI_KEY) {
+          apiKey = metaEnv.VITE_GOOGLE_AI_KEY;
+      } else {
+          try {
             // @ts-ignore
-            apiKey = process.env.API_KEY;
-        }
-      } catch (e) { }
+            if (typeof process !== 'undefined' && process.env?.API_KEY) {
+                // @ts-ignore
+                apiKey = process.env.API_KEY;
+            }
+          } catch (e) { }
+      }
   }
 
   return { provider: provider as any, apiKey, model };

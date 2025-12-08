@@ -1,3 +1,4 @@
+
 import { supabase } from '../supabaseClient';
 import { 
   Appointment, AppointmentSlot, 
@@ -35,7 +36,8 @@ export const getAIConfig = async (): Promise<AIConfig> => {
 
   let apiKey = '';
   let provider = 'google';
-  let model = 'gemini-3-pro-preview';
+  // CHANGED: Default to Flash model for higher rate limits and speed
+  let model = 'gemini-2.5-flash';
 
   // 2. Try fetching from Supabase System Settings (Dynamic Configuration)
   try {
@@ -85,7 +87,8 @@ export const generateSmartContent = async (prompt: string, systemInstruction?: s
     // --- Google Gemini Provider ---
     if (config.provider === 'google') {
         const ai = new GoogleGenAI({ apiKey: config.apiKey });
-        const targetModel = modelOverride || config.model || 'gemini-3-pro-preview';
+        // Use the config model unless overridden
+        const targetModel = modelOverride || config.model;
         
         const genConfig: any = { systemInstruction };
         

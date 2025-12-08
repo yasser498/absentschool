@@ -29,9 +29,6 @@ export const invalidateCache = (key: string) => {
 // --- AI Configuration ---
 export interface AIConfig { provider: 'google' | 'openai_compatible'; apiKey: string; baseUrl?: string; model: string; }
 
-// Hardcoded fallback to ensure immediate operation as per user request
-const FALLBACK_KEY = "AIzaSyBeIsIrMvAA3dSRPxuSsxpJ0fzo3V8EuYk";
-
 export const getAIConfig = async (): Promise<AIConfig> => {
   // 1. Check LocalStorage (For Admin Override/Testing)
   const stored = localStorage.getItem('ozr_ai_config');
@@ -68,11 +65,6 @@ export const getAIConfig = async (): Promise<AIConfig> => {
       } catch (e) { }
   }
 
-  // 4. Final Fallback (Hardcoded Key)
-  if (!apiKey) {
-      apiKey = FALLBACK_KEY;
-  }
-
   return { provider: provider as any, apiKey, model };
 };
 
@@ -82,7 +74,7 @@ export const generateSmartContent = async (prompt: string, systemInstruction?: s
     
     if (!config.apiKey) {
         console.warn("AI Feature Skipped: API Key is missing.");
-        return "عذراً، خدمة الذكاء الاصطناعي غير مفعلة حالياً.";
+        return "عذراً، خدمة الذكاء الاصطناعي غير مفعلة حالياً (المفتاح مفقود).";
     }
 
     // --- Google Gemini Provider ---
@@ -111,7 +103,6 @@ export const generateSmartContent = async (prompt: string, systemInstruction?: s
     // --- OpenAI / DeepSeek Provider (Future Expansion) ---
     if (config.provider === 'openai_compatible') {
         // This block is ready for future implementation of DeepSeek/GPT via standard OpenAI-like API
-        // You would use fetch() here to call the endpoint defined in config.baseUrl
         return "تم إعداد النظام لدعم هذا المزود، ولكن لم يتم تفعيله بعد.";
     }
 
@@ -362,7 +353,6 @@ export const generateUserSpecificBotContext = async (): Promise<{role: string, c
 
 export const analyzeSentiment = async (text: string): Promise<'positive' | 'negative' | 'neutral'> => {
     try {
-        // Need to wait for config in case it's fetched from DB
         const config = await getAIConfig();
         if(!config.apiKey) return 'neutral';
 

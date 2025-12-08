@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { Check, X, Eye, Calendar, Search, User, FileText, RefreshCw, Loader2, MessageCircle, School, Paperclip, History, ChevronDown, ChevronUp } from 'lucide-react';
 import { getRequests, updateRequestStatus, getStudentAttendanceHistory } from '../../services/storage';
 import { RequestStatus, ExcuseRequest, StaffUser, AttendanceStatus } from '../../types';
+
+const { useNavigate } = ReactRouterDOM as any;
 
 const StaffRequests: React.FC = () => {
   const navigate = useNavigate();

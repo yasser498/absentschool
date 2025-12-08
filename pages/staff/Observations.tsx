@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { Search, Plus, Edit, Trash2, Printer, Loader2, FileText, School, User, Calendar, Sparkles, Trophy, Wand2, MessageCircle, X, Check, Filter } from 'lucide-react';
 import { getStudents, addStudentObservation, getStudentObservations, updateStudentObservation, deleteStudentObservation, analyzeSentiment, addStudentPoints, generateSmartContent, acknowledgeObservation } from '../../services/storage';
 import { Student, StaffUser, StudentObservation } from '../../types';
@@ -25,6 +24,8 @@ const OfficialHeader = ({ schoolName, subTitle }: { schoolName: string, subTitle
     </div>
   </div>
 );
+
+const { useNavigate } = ReactRouterDOM as any;
 
 const StaffObservations: React.FC = () => {
   const navigate = useNavigate();

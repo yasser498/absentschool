@@ -6,6 +6,10 @@ import {
 } from "../types";
 import { GoogleGenAI } from "@google/genai";
 
+// Declare global libraries loaded via CDN
+declare var XLSX: any;
+declare var pdfjsLib: any;
+
 // --- Caching System ---
 const CACHE: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 15 * 60 * 1000; // 15 Minutes
@@ -122,6 +126,84 @@ export const generateSmartContent = async (prompt: string, systemInstruction?: s
       }
       return "تعذر الاتصال بخدمة الذكاء الاصطناعي."; 
   }
+};
+
+// --- NEW FUNCTION: EXTRACT TEXT FROM FILES ---
+export const extractTextFromFile = async (file: File): Promise<string> => {
+    const fileType = file.type;
+    
+    // 1. Excel (Using SheetJS)
+    if (fileType.includes('sheet') || fileType.includes('excel') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        if (typeof XLSX === 'undefined') return "مكتبة Excel غير متوفرة.";
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    let text = "";
+                    workbook.SheetNames.forEach((sheetName: string) => {
+                        const worksheet = workbook.Sheets[sheetName];
+                        text += `--- ورقة: ${sheetName} ---\n`;
+                        text += XLSX.utils.sheet_to_txt(worksheet);
+                        text += "\n";
+                    });
+                    resolve(text);
+                } catch (err) { reject(err); }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    // 2. PDF (Using PDF.js for raw text, falls back to Gemini if complex)
+    if (fileType === 'application/pdf') {
+        try {
+            if (typeof pdfjsLib !== 'undefined') {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = "";
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map((item: any) => item.str).join(' ');
+                    fullText += `--- صفحة ${i} ---\n${pageText}\n`;
+                }
+                // If PDF.js extracted meaningful text, use it. Otherwise (scanned PDF), use Gemini.
+                if (fullText.trim().length > 50) return fullText;
+            }
+        } catch (e) {
+            console.warn("PDF.js extraction failed, falling back to Gemini Vision", e);
+        }
+    }
+
+    // 3. Images & Scanned PDFs & Other Docs (Using Gemini Vision/Multimodal)
+    // Supports: PNG, JPEG, WEBP, HEIC, PDF
+    try {
+        const config = await getAIConfig();
+        if (!config.apiKey) return "API Key missing for AI extraction.";
+
+        const ai = new GoogleGenAI({ apiKey: config.apiKey });
+        const base64Data = await fileToBase64(file);
+        // Remove header (data:image/png;base64,)
+        const inlineData = base64Data.split(',')[1]; 
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [
+                {
+                    inlineData: {
+                        mimeType: file.type,
+                        data: inlineData
+                    }
+                },
+                { text: "Extract all text from this document/image verbatim. If it's a table, format it clearly." }
+            ]
+        });
+        return response.text || "لم يتم العثور على نص.";
+    } catch (e: any) {
+        console.error("AI Extraction Failed", e);
+        return `فشل استخراج النص: ${e.message}`;
+    }
 };
 
 // Helper to get Counselor Name

@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { useLocation } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { 
   Users, Search, Phone, User, MapPin, School, CheckCircle, 
   ShieldAlert, Printer, Plus, Inbox, FileText, LayoutGrid, 
@@ -36,6 +35,8 @@ const OfficialCounselorHeader = ({ title, date }: { title: string, date: string 
         </div>
     </div>
 );
+
+const { useLocation } = ReactRouterDOM as any;
 
 const StaffStudents: React.FC = () => {
   const location = useLocation();

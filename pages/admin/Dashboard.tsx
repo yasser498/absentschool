@@ -4,7 +4,7 @@ import * as ReactRouterDOM from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
 import { 
   FileText, Clock, CheckCircle, Sparkles, Calendar, AlertTriangle, Loader2, BrainCircuit, 
-  Search, Settings, Printer, BarChart2, Users, Trash2, ShieldAlert, Send, Megaphone, Activity, LayoutGrid, RefreshCw, Plus, UserCheck, CalendarCheck, Edit, GitCommit, List, Save, AlertCircle, Eye, ArrowRight, Gavel, Check, School, LogOut, MessageSquare, Bell
+  Search, Settings, Printer, BarChart2, Users, Trash2, ShieldAlert, Send, Megaphone, Activity, LayoutGrid, RefreshCw, Plus, UserCheck, CalendarCheck, Edit, GitCommit, List, Save, AlertCircle, Eye, ArrowRight, Gavel, Check, School, LogOut, MessageSquare, Bell, Upload, BookOpen
 } from 'lucide-react';
 import { 
   getRequests, getStudents, getConsecutiveAbsences, resolveAbsenceAlert, getBehaviorRecords, 
@@ -12,9 +12,10 @@ import {
   clearAttendance, clearRequests, clearStudents, clearBehaviorRecords, clearAdminInsights, 
   clearReferrals, getSchoolNews, updateSchoolNews, addSchoolNews, deleteSchoolNews,
   getAvailableSlots, addAppointmentSlot, deleteAppointmentSlot, getDailyAppointments, getStaffUsers,
-  getBotContext, getExitPermissions, generateDefaultAppointmentSlots, updateAppointmentSlot,
+  getBotContext, saveBotContext, getExitPermissions, generateDefaultAppointmentSlots, updateAppointmentSlot,
   getStudentObservations, getReferrals, updateReferralStatus, getAdminInsights,
-  sendBatchNotifications, generateTeacherAbsenceSummary, sendPendingReferralReminders
+  sendBatchNotifications, generateTeacherAbsenceSummary, sendPendingReferralReminders,
+  extractTextFromFile 
 } from '../../services/storage';
 import { ExcuseRequest, Student, BehaviorRecord, AttendanceRecord, SchoolNews, Appointment, AppointmentSlot, StaffUser, ExitPermission, StudentObservation, Referral, AdminInsight } from '../../types';
 
@@ -47,10 +48,13 @@ const Dashboard: React.FC = () => {
   const [aiBriefing, setAiBriefing] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Settings
+  // Settings & Bot Context
   const [tempSchoolName, setTempSchoolName] = useState(schoolName);
   const [tempSchoolLogo, setTempSchoolLogo] = useState(schoolLogo);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [botContext, setBotContext] = useState('');
+  const [isSavingContext, setIsSavingContext] = useState(false);
+  const [fileProcessing, setFileProcessing] = useState(false);
 
   // Tracking
   const [trackingFilter, setTrackingFilter] = useState<'all' | 'pending' | 'resolved'>('all');
@@ -86,7 +90,7 @@ const Dashboard: React.FC = () => {
   const fetchData = async () => {
       setDataLoading(true);
       try {
-        const [reqs, studs, behaviors, atts, news, apps, obs, refs, risks, slts, exits, dirs, users] = await Promise.all([
+        const [reqs, studs, behaviors, atts, news, apps, obs, refs, risks, slts, exits, dirs, users, context] = await Promise.all([
             getRequests(), 
             getStudents(), 
             getBehaviorRecords(),
@@ -99,7 +103,8 @@ const Dashboard: React.FC = () => {
             getAvailableSlots(apptDate),
             getExitPermissions(apptDate),
             getAdminInsights(),
-            getStaffUsers()
+            getStaffUsers(),
+            getBotContext()
         ]);
         setRequests(reqs);
         setStudents(studs);
@@ -114,6 +119,7 @@ const Dashboard: React.FC = () => {
         setTodaysExits(exits);
         setSentDirectives(dirs);
         setStaffUsers(users);
+        setBotContext(context);
 
       } catch (error) {
         console.error("Failed to fetch dashboard data", error);
@@ -158,6 +164,50 @@ const Dashboard: React.FC = () => {
       setSchoolLogo(tempSchoolLogo);
       alert("تم حفظ الإعدادات بنجاح! سيتم تحديث النظام.");
       window.location.reload();
+  };
+
+  const handleSaveBotContext = async () => {
+      setIsSavingContext(true);
+      try {
+          await saveBotContext(botContext);
+          alert("تم تحديث قاعدة المعرفة بنجاح.");
+      } catch(e) {
+          alert("حدث خطأ أثناء الحفظ.");
+      } finally {
+          setIsSavingContext(false);
+      }
+  };
+
+  const handleFileFeed = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+          alert("حجم الملف كبير جداً. الحد الأقصى 10 ميجابايت.");
+          return;
+      }
+
+      setFileProcessing(true);
+      try {
+          // Use the new helper function in storage.ts
+          const extractedText = await extractTextFromFile(file);
+          
+          if (!extractedText || extractedText.length < 5) {
+              alert("لم يتم العثور على نص واضح في الملف.");
+          } else {
+              setBotContext(prev => {
+                  const header = `\n\n--- محتوى مستخرج من ملف: ${file.name} ---\n`;
+                  return prev + header + extractedText;
+              });
+              alert("تم استخراج النص وإضافته إلى المحرر. يرجى المراجعة ثم الحفظ.");
+          }
+      } catch (error: any) {
+          console.error(error);
+          alert(`فشل تحليل الملف: ${error.message}`);
+      } finally {
+          setFileProcessing(false);
+          e.target.value = ''; // Reset input
+      }
   };
 
   const handleClearData = async (target: 'requests'|'attendance'|'behavior'|'students'|'referrals'|'all') => {
@@ -660,9 +710,10 @@ const Dashboard: React.FC = () => {
           </div>
       )}
 
-      {/* Reuse Settings Tab from previous logic (kept minimal for brevity as it was already implemented) */}
+      {/* === SETTINGS: SCHOOL INFO & BOT KNOWLEDGE BASE === */}
       {activeView === 'settings' && (
-          <div className="max-w-2xl mx-auto px-6 space-y-8 animate-fade-in">
+          <div className="max-w-4xl mx-auto px-6 space-y-8 animate-fade-in">
+              {/* School Basic Info */}
               <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                   <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><School className="text-blue-600"/> إعدادات المدرسة</h2>
                   <div className="space-y-4">
@@ -671,6 +722,58 @@ const Dashboard: React.FC = () => {
                       <button onClick={handleSaveSettings} className="w-full bg-blue-900 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-800"><Save size={18}/> حفظ التغييرات</button>
                   </div>
               </div>
+
+              {/* Bot Knowledge Base (New Feature) */}
+              <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-bl-full -mr-10 -mt-10"></div>
+                  <h2 className="text-xl font-bold text-indigo-900 mb-2 flex items-center gap-2 relative z-10">
+                      <BrainCircuit className="text-indigo-600"/> تغذية البوت (قاعدة المعرفة)
+                  </h2>
+                  <p className="text-sm text-slate-500 mb-6 relative z-10">
+                      أضف المعلومات العامة، اللوائح، أو الجداول الدراسية لتدريب المساعد الذكي. يمكنك الكتابة مباشرة أو رفع ملفات (PDF, Excel, Images).
+                  </p>
+
+                  <div className="space-y-4 relative z-10">
+                      {/* File Uploader */}
+                      <div className="border-2 border-dashed border-indigo-200 rounded-xl p-6 text-center hover:bg-indigo-50/50 transition-colors relative">
+                          <input 
+                              type="file" 
+                              accept=".pdf,.xlsx,.xls,.jpg,.jpeg,.png,.webp" 
+                              onChange={handleFileFeed} 
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              disabled={fileProcessing}
+                          />
+                          <div className="flex flex-col items-center gap-2 text-indigo-400">
+                              {fileProcessing ? <Loader2 size={32} className="animate-spin text-indigo-600"/> : <Upload size={32}/>}
+                              <p className="font-bold text-sm text-indigo-700">
+                                  {fileProcessing ? 'جاري تحليل الملف واستخراج النصوص...' : 'اضغط لرفع ملف (PDF, Excel, صورة)'}
+                              </p>
+                              <p className="text-xs opacity-70">سيتم استخراج النص وإضافته للمحرر أدناه للمراجعة</p>
+                          </div>
+                      </div>
+
+                      {/* Text Editor */}
+                      <div>
+                          <label className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2"><BookOpen size={14}/> محتوى قاعدة المعرفة</label>
+                          <textarea 
+                              value={botContext} 
+                              onChange={e => setBotContext(e.target.value)} 
+                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl min-h-[250px] outline-none focus:ring-2 focus:ring-indigo-200 font-mono text-sm leading-relaxed"
+                              placeholder="اكتب هنا معلومات عن المدرسة، أوقات الدوام، قوانين الغياب، إلخ..."
+                          ></textarea>
+                      </div>
+
+                      <button 
+                          onClick={handleSaveBotContext} 
+                          disabled={isSavingContext} 
+                          className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all"
+                      >
+                          {isSavingContext ? <Loader2 className="animate-spin"/> : <Save size={18}/>} حفظ وتحديث البوت
+                      </button>
+                  </div>
+              </div>
+
+              {/* Danger Zone */}
               <div className="bg-red-50 p-8 rounded-3xl border border-red-100">
                   <h2 className="text-xl font-bold text-red-800 mb-6 flex items-center gap-2"><AlertTriangle className="text-red-600"/> منطقة الخطر</h2>
                   <button onClick={()=>handleClearData('all')} disabled={isDeleting} className="w-full bg-red-600 text-white py-4 rounded-xl font-bold hover:bg-red-700 shadow-lg shadow-red-200 flex items-center justify-center gap-2"><Trash2 size={20}/> تصفير النظام بالكامل</button>

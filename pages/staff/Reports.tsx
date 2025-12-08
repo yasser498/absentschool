@@ -1,10 +1,11 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { Calendar, BarChart2, Users, AlertCircle, Clock, CheckCircle, School, ChevronDown, Loader2, Printer, PieChart as PieIcon, TrendingUp, ArrowUpRight, Grid } from 'lucide-react';
 import { getDailyAttendanceReport, getStudents, getAttendanceRecords, getRequests } from '../../services/storage';
 import { AttendanceStatus, StaffUser, ClassAssignment, AttendanceRecord, RequestStatus, ExcuseRequest } from '../../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+
+const { useNavigate } = ReactRouterDOM as any;
 
 const StaffReports: React.FC = () => {
   const navigate = useNavigate();

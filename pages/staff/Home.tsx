@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import * as ReactRouterDOM from 'react-router-dom';
 import { ClipboardCheck, MessageSquare, BookUser, BarChart2, ShieldCheck, LogOut, Briefcase, FileText, BellRing, Sparkles, X, Calendar, User, CheckCircle, Info } from 'lucide-react';
 import { StaffUser, SchoolNews, AdminInsight, AppNotification } from '../../types';
 import { getSchoolNews, getAdminInsights, getNotifications, markNotificationRead } from '../../services/storage';
+
+const { useNavigate } = ReactRouterDOM as any;
 
 const StaffHome: React.FC = () => {
   const navigate = useNavigate();

@@ -15,7 +15,7 @@ import {
   getBotContext, saveBotContext, getExitPermissions, generateDefaultAppointmentSlots, updateAppointmentSlot,
   getStudentObservations, getReferrals, updateReferralStatus, getAdminInsights,
   sendBatchNotifications, generateTeacherAbsenceSummary, sendPendingReferralReminders,
-  extractTextFromFile 
+  extractTextFromFile, getAllParentIds
 } from '../../services/storage';
 import { ExcuseRequest, Student, BehaviorRecord, AttendanceRecord, SchoolNews, Appointment, AppointmentSlot, StaffUser, ExitPermission, StudentObservation, Referral, AdminInsight } from '../../types';
 
@@ -78,7 +78,7 @@ const Dashboard: React.FC = () => {
   const [isSendingDirective, setIsSendingDirective] = useState(false);
 
   // Notifications Logic
-  const [notifTargetGroup, setNotifTargetGroup] = useState<'all' | 'teachers' | 'admins'>('all');
+  const [notifTargetGroup, setNotifTargetGroup] = useState<'global' | 'all_staff' | 'teachers' | 'admins'>('all_staff');
   const [notifTitle, setNotifTitle] = useState('');
   const [notifMessage, setNotifMessage] = useState('');
   const [isSendingNotif, setIsSendingNotif] = useState(false);
@@ -322,7 +322,15 @@ const Dashboard: React.FC = () => {
       setIsSendingNotif(true);
       try {
           let targetIds: string[] = [];
-          if (notifTargetGroup === 'all') {
+          
+          if (notifTargetGroup === 'global') {
+              // 1. Get All Staff IDs
+              const staffIds = staffUsers.map(u => u.id);
+              // 2. Get All Parent IDs
+              const parentIds = await getAllParentIds();
+              // 3. Combine
+              targetIds = [...staffIds, ...parentIds];
+          } else if (notifTargetGroup === 'all_staff') {
               targetIds = staffUsers.map(u => u.id);
           } else if (notifTargetGroup === 'teachers') {
               targetIds = staffUsers.filter(u => !u.permissions?.includes('students') && !u.permissions?.includes('deputy')).map(u => u.id);
@@ -336,9 +344,13 @@ const Dashboard: React.FC = () => {
           }
 
           await sendBatchNotifications(targetIds, 'info', notifTitle, notifMessage);
-          alert(`تم إرسال الإشعار لـ ${targetIds.length} مستخدم.`);
+          
+          const targetLabel = notifTargetGroup === 'global' ? 'لجميع المستخدمين (أولياء أمور وموظفين)' : `لـ ${targetIds.length} مستخدم`;
+          alert(`تم إرسال الإشعار بنجاح ${targetLabel}.`);
+          
           setNotifTitle(''); setNotifMessage('');
       } catch (e) {
+          console.error(e);
           alert("فشل الإرسال.");
       } finally {
           setIsSendingNotif(false);
@@ -588,16 +600,17 @@ const Dashboard: React.FC = () => {
                       <div className="space-y-4">
                           <div>
                               <label className="text-xs font-bold text-slate-500 block mb-2">الفئة المستهدفة</label>
-                              <div className="flex bg-slate-50 p-1 rounded-xl">
+                              <div className="flex bg-slate-50 p-1 rounded-xl flex-wrap gap-1">
                                   {[
-                                      {id: 'all', label: 'الكل'}, 
+                                      {id: 'global', label: 'الجميع (عام)'},
+                                      {id: 'all_staff', label: 'جميع الموظفين'}, 
                                       {id: 'teachers', label: 'المعلمين'}, 
-                                      {id: 'admins', label: 'الإداريين/الموجهين'}
+                                      {id: 'admins', label: 'الإداريين'}
                                   ].map(opt => (
                                       <button 
                                           key={opt.id} 
                                           onClick={() => setNotifTargetGroup(opt.id as any)}
-                                          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${notifTargetGroup === opt.id ? 'bg-white shadow text-blue-900' : 'text-slate-500 hover:text-slate-700'}`}
+                                          className={`flex-1 py-2 px-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${notifTargetGroup === opt.id ? 'bg-white shadow text-blue-900' : 'text-slate-500 hover:text-slate-700'}`}
                                       >
                                           {opt.label}
                                       </button>

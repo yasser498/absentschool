@@ -235,7 +235,7 @@ const Inquiry: React.FC = () => {
           const [reqs, att, beh, allObs, pts, slots, apps, exits] = await Promise.all([
               getRequestsByStudentId(student.studentId),
               getStudentAttendanceHistory(student.studentId, student.grade, student.className),
-              getBehaviorRecords(student.studentId),
+              getBehaviorRecords(), // Fixed: No argument
               getStudentObservations(student.studentId),
               getStudentPoints(student.studentId),
               getAvailableSlots(),
@@ -245,7 +245,7 @@ const Inquiry: React.FC = () => {
           
           setHistory(reqs);
           setAttendanceHistory(att);
-          setBehaviorHistory(beh);
+          setBehaviorHistory(beh.filter(b => b.studentId === student.studentId)); // Fixed: Filter manually
           setPositiveObservations(allObs.filter(o => o.type === 'positive'));
           setObservations(allObs.filter(o => o.type !== 'positive'));
           setPoints(pts);

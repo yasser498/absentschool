@@ -114,7 +114,7 @@ export const syncStudentsBatch = async (toUpsert: Student[], toDeleteIds: string
 };
 
 export const clearStudents = async () => {
-    await supabase.from('students').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+    const { error } = await supabase.from('students').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
     if (error) throw new Error(error.message);
     invalidateCache();
 }
@@ -631,7 +631,7 @@ export const getStudentPoints = async (studentId: string) => {
 // --- News ---
 
 export const getSchoolNews = async (): Promise<SchoolNews[]> => {
-    const { data, error } = await supabase.from('school_news').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('news').select('*').order('created_at', { ascending: false });
     if (error) return [];
     return data.map((n: any) => ({
         id: n.id,
@@ -644,7 +644,7 @@ export const getSchoolNews = async (): Promise<SchoolNews[]> => {
 };
 
 export const addSchoolNews = async (news: Partial<SchoolNews>) => {
-    await supabase.from('school_news').insert({
+    await supabase.from('news').insert({
         title: news.title,
         content: news.content,
         author: news.author,
@@ -653,7 +653,7 @@ export const addSchoolNews = async (news: Partial<SchoolNews>) => {
 };
 
 export const deleteSchoolNews = async (id: string) => {
-    await supabase.from('school_news').delete().eq('id', id);
+    await supabase.from('news').delete().eq('id', id);
 };
 
 export const updateSchoolNews = async () => { /* impl */ };

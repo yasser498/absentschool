@@ -353,7 +353,7 @@ const StaffStudents: React.FC = () => {
                             </div>
                             
                             {ref.status === 'pending' ? (
-                                <button onClick={() => updateReferralStatus(ref.id, 'in_progress').then(fetchData)} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700">استلام الحالة وبدء المعالجة</button>
+                                <button onClick={() => updateReferralStatus(ref.id, 'in_progress').then(() => fetchData())} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700">استلام الحالة وبدء المعالجة</button>
                             ) : (
                                 <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
                                     <h4 className="font-bold text-purple-900 mb-2 flex items-center gap-2"><Send size={16}/> تسجيل النتائج</h4>

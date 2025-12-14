@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Search, UserCheck, School, X, CheckSquare, Square, Loader2, RefreshCw, Edit, KeyRound, ShieldCheck, ChevronRight, Check, Lock } from 'lucide-react';
-import { getStaffUsersSync, getStaffUsers, addStaffUser, updateStaffUser, deleteStaffUser, getAvailableClassesForGrade } from '../../services/storage';
+import { getStaffUsersSync, getStaffUsers, addStaffUser, updateStaffUser, deleteStaffUser, getAvailableClassesForGrade, getExistingGrades } from '../../services/storage';
 import { StaffUser, ClassAssignment } from '../../types';
-import { GRADES, PERMISSIONS } from '../../constants';
+import { PERMISSIONS } from '../../constants';
 
 const Users: React.FC = () => {
   // Use synchronous getter for instant load if available
@@ -21,6 +20,7 @@ const Users: React.FC = () => {
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   
   // Assignment State
+  const [availableGrades, setAvailableGrades] = useState<string[]>([]);
   const [selectedGrade, setSelectedGrade] = useState('');
   const [availableClasses, setAvailableClasses] = useState<string[]>([]);
   const [loadingClasses, setLoadingClasses] = useState(false);
@@ -43,6 +43,13 @@ const Users: React.FC = () => {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  // Fetch available grades when modal opens
+  useEffect(() => {
+    if (showAddModal) {
+        getExistingGrades().then(setAvailableGrades);
+    }
+  }, [showAddModal]);
 
   // Fetch classes dynamically when grade changes
   useEffect(() => {
@@ -458,7 +465,7 @@ const Users: React.FC = () => {
                                   className={inputClasses}
                                 >
                                    <option value="">-- اختر الصف --</option>
-                                   {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
+                                   {availableGrades.map(g => <option key={g} value={g}>{g}</option>)}
                                 </select>
                              </div>
                              

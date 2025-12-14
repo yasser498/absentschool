@@ -234,8 +234,8 @@ const Inquiry: React.FC = () => {
           // Fetch ALL necessary data for tabs
           const [reqs, att, beh, allObs, pts, slots, apps, exits] = await Promise.all([
               getRequestsByStudentId(student.studentId),
-              getStudentAttendanceHistory(student.studentId, student.grade, student.className),
-              getBehaviorRecords(), // Fixed: No argument
+              getStudentAttendanceHistory(student.studentId),
+              getBehaviorRecords(student.studentId), 
               getStudentObservations(student.studentId),
               getStudentPoints(student.studentId),
               getAvailableSlots(),
@@ -245,7 +245,7 @@ const Inquiry: React.FC = () => {
           
           setHistory(reqs);
           setAttendanceHistory(att);
-          setBehaviorHistory(beh.filter(b => b.studentId === student.studentId)); // Fixed: Filter manually
+          setBehaviorHistory(beh);
           setPositiveObservations(allObs.filter(o => o.type === 'positive'));
           setObservations(allObs.filter(o => o.type !== 'positive'));
           setPoints(pts);
@@ -829,7 +829,7 @@ const Inquiry: React.FC = () => {
             )}
         </div>
 
-        {/* MODALS */}
+        {/* MODALs */}
         {showBookingModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
                 <div className="bg-white rounded-3xl p-6 w-full max-w-sm relative">

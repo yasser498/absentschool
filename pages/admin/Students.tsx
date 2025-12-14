@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Search, UserCheck, School, X, CheckSquare, Square, Loader2, RefreshCw, Edit, Save, Smartphone, Hash, GraduationCap } from 'lucide-react';
-import { getStudents, syncStudentsBatch, getStudentsSync, addStudent, deleteStudent, updateStudent } from '../../services/storage';
+import { getStudents, syncStudentsBatch, getStudentsSync, addStudent, deleteStudent, updateStudent, getAvailableClassesForGrade } from '../../services/storage';
 import { Student } from '../../types';
 import { GRADES, CLASSES } from '../../constants';
 
@@ -28,9 +28,12 @@ const Students: React.FC = () => {
       name: '',
       studentId: '',
       grade: GRADES[0],
-      className: CLASSES[0],
+      className: '',
       phone: ''
   });
+
+  // Dynamic class list for suggestions
+  const [existingClassesForForm, setExistingClassesForForm] = useState<string[]>([]);
 
   const fetchStudents = async (force = false) => {
     if (force || students.length === 0) setLoading(true);
@@ -46,6 +49,15 @@ const Students: React.FC = () => {
   };
 
   useEffect(() => { fetchStudents(); }, []);
+
+  // Fetch classes when grade changes in modal
+  useEffect(() => {
+      if (showModal && formData.grade) {
+          getAvailableClassesForGrade(formData.grade).then(setExistingClassesForForm);
+      } else {
+          setExistingClassesForForm([]);
+      }
+  }, [formData.grade, showModal]);
 
   const handleRefresh = () => fetchStudents(true);
 
@@ -85,7 +97,7 @@ const Students: React.FC = () => {
   // --- Add / Edit Logic ---
   const openAddModal = () => {
       setIsEditing(false);
-      setFormData({ name: '', studentId: '', grade: GRADES[0], className: CLASSES[0], phone: '' });
+      setFormData({ name: '', studentId: '', grade: GRADES[0], className: '', phone: '' });
       setShowModal(true);
   };
 
@@ -111,11 +123,17 @@ const Students: React.FC = () => {
         return;
     }
 
+    if (!formData.className.trim()) {
+        alert("يرجى إدخال اسم الفصل.");
+        return;
+    }
+
     setLoading(true); 
     try {
       const studentPayload: Student = {
           id: currentStudentId || '', // ID ignored on insert, used on update logic if needed
-          ...formData
+          ...formData,
+          className: formData.className.trim() // Ensure clean string
       };
 
       if (isEditing) {
@@ -187,7 +205,7 @@ const Students: React.FC = () => {
                     name: name.toString().trim(),
                     studentId: studentIdRaw.toString().trim(),
                     grade: mapCodeToGrade(gradeRaw) || GRADES[0],
-                    className: classRaw ? classRaw.toString().trim() : CLASSES[0],
+                    className: classRaw ? classRaw.toString().trim() : '1',
                     phone: phone.toString().trim()
                 });
             }
@@ -357,9 +375,18 @@ const Students: React.FC = () => {
                     </div>
                     <div>
                        <label className={labelClasses}>الفصل (الشعبة)</label>
-                       <select value={formData.className} onChange={e => setFormData({...formData, className: e.target.value})} className={inputClasses}>
-                          {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                       </select>
+                       {/* Changed from select to input with datalist to allow creating new classes */}
+                       <input 
+                         list="classOptions"
+                         required
+                         value={formData.className}
+                         onChange={e => setFormData({...formData, className: e.target.value})}
+                         className={inputClasses}
+                         placeholder="اكتب الفصل (أ، ب، 1...)"
+                       />
+                       <datalist id="classOptions">
+                          {existingClassesForForm.map(c => <option key={c} value={c} />)}
+                       </datalist>
                     </div>
                  </div>
                  <div>

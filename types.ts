@@ -26,7 +26,6 @@ export interface ExcuseRequest {
   attachmentName?: string;
   attachmentUrl?: string;
   status: RequestStatus;
-  submissionDate: string;
 }
 
 export interface DashboardStats {

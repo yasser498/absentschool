@@ -113,7 +113,7 @@ const StaffStudents: React.FC = () => {
       setLoadingDetails(true);
       try {
           const [h, b, o] = await Promise.all([
-              getStudentAttendanceHistory(student.studentId, student.grade, student.className),
+              getStudentAttendanceHistory(student.studentId),
               getBehaviorRecords(student.studentId),
               getStudentObservations(student.studentId)
           ]);

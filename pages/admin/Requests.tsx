@@ -50,7 +50,7 @@ const Requests: React.FC = () => {
   useEffect(() => {
       if (selectedReq) {
           setLoadingHistory(true);
-          getStudentAttendanceHistory(selectedReq.studentId, selectedReq.grade, selectedReq.className)
+          getStudentAttendanceHistory(selectedReq.studentId)
               .then(setStudentHistory)
               .catch(console.error)
               .finally(() => setLoadingHistory(false));

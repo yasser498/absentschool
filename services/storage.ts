@@ -3,8 +3,9 @@ import {
   Student, ExcuseRequest, StaffUser, AttendanceRecord, BehaviorRecord, 
   SchoolNews, Appointment, AppointmentSlot, ExitPermission, 
   StudentObservation, Referral, GuidanceSession, AppNotification, 
-  RequestStatus, AttendanceStatus, AdminInsight
+  RequestStatus, AttendanceStatus, AdminInsight, ClassAssignment
 } from '../types';
+import { GRADES } from '../constants';
 import { GoogleGenAI } from "@google/genai";
 
 // Cache for sync access
@@ -20,6 +21,13 @@ const mapStudentFromDB = (data: any): Student => ({
   className: data.class_name,
   phone: data.phone
 });
+
+const safeParseJSON = (val: any): any => {
+    if (typeof val === 'string') {
+        try { return JSON.parse(val); } catch (e) { return []; }
+    }
+    return val || [];
+};
 
 export const invalidateCache = () => {
     studentsCache = null;
@@ -85,13 +93,11 @@ export const deleteStudent = async (id: string): Promise<void> => {
 };
 
 export const syncStudentsBatch = async (toUpsert: Student[], toDeleteIds: string[], toDeleteDbIds: string[] = []) => {
-    // Basic implementation for bulk operations
     if (toDeleteDbIds.length > 0) {
         await supabase.from('students').delete().in('id', toDeleteDbIds);
     }
     
     for (const s of toUpsert) {
-        // Upsert based on student_id
         const { data: existing } = await supabase.from('students').select('id').eq('student_id', s.studentId).single();
         if (existing) {
             await supabase.from('students').update({
@@ -114,7 +120,7 @@ export const syncStudentsBatch = async (toUpsert: Student[], toDeleteIds: string
 };
 
 export const clearStudents = async () => {
-    const { error } = await supabase.from('students').delete().neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+    const { error } = await supabase.from('students').delete().neq('id', '00000000-0000-0000-0000-000000000000'); 
     if (error) throw new Error(error.message);
     invalidateCache();
 }
@@ -122,8 +128,11 @@ export const clearStudents = async () => {
 // --- Requests (Excuses) ---
 
 export const getRequests = async (force = false): Promise<ExcuseRequest[]> => {
-    const { data, error } = await supabase.from('excuse_requests').select('*');
-    if (error) return [];
+    const { data, error } = await supabase.from('requests').select('*');
+    if (error) {
+        console.error('getRequests error:', error);
+        return [];
+    }
     return data.map((r: any) => ({
         id: r.id,
         studentId: r.student_id,
@@ -136,12 +145,11 @@ export const getRequests = async (force = false): Promise<ExcuseRequest[]> => {
         attachmentName: r.attachment_name,
         attachmentUrl: r.attachment_url,
         status: r.status as RequestStatus,
-        submissionDate: r.created_at
     }));
 };
 
 export const getRequestsByStudentId = async (studentId: string): Promise<ExcuseRequest[]> => {
-    const { data, error } = await supabase.from('excuse_requests').select('*').eq('student_id', studentId);
+    const { data, error } = await supabase.from('requests').select('*').eq('student_id', studentId);
     if (error) return [];
     return data.map((r: any) => ({
         id: r.id,
@@ -155,12 +163,11 @@ export const getRequestsByStudentId = async (studentId: string): Promise<ExcuseR
         attachmentName: r.attachment_name,
         attachmentUrl: r.attachment_url,
         status: r.status as RequestStatus,
-        submissionDate: r.created_at
     }));
 };
 
 export const addRequest = async (req: ExcuseRequest): Promise<void> => {
-    const { error } = await supabase.from('excuse_requests').insert({
+    const { error } = await supabase.from('requests').insert({
         student_id: req.studentId,
         student_name: req.studentName,
         grade: req.grade,
@@ -174,16 +181,14 @@ export const addRequest = async (req: ExcuseRequest): Promise<void> => {
     });
     if (error) throw new Error(error.message);
     
-    // Notify staff
     await createNotification('ALL_STAFF', 'info', 'عذر جديد', `تم تقديم عذر للطالب ${req.studentName}`);
 };
 
 export const updateRequestStatus = async (id: string, status: RequestStatus): Promise<void> => {
-    const { error } = await supabase.from('excuse_requests').update({ status }).eq('id', id);
+    const { error } = await supabase.from('requests').update({ status }).eq('id', id);
     if (error) throw new Error(error.message);
     
-    // Get Request to notify parent
-    const { data: req } = await supabase.from('excuse_requests').select('student_id').eq('id', id).single();
+    const { data: req } = await supabase.from('requests').select('student_id').eq('id', id).single();
     if (req) {
         await createNotification(req.student_id, status === RequestStatus.APPROVED ? 'success' : 'alert', 'تحديث حالة العذر', `تم ${status === RequestStatus.APPROVED ? 'قبول' : 'رفض'} العذر المقدم.`);
     }
@@ -191,12 +196,12 @@ export const updateRequestStatus = async (id: string, status: RequestStatus): Pr
 
 export const getPendingRequestsCountForStaff = async (assignments: any[]): Promise<number> => {
     if (!assignments || assignments.length === 0) return 0;
-    const { count, error } = await supabase.from('excuse_requests').select('*', { count: 'exact', head: true }).eq('status', 'PENDING');
+    const { count, error } = await supabase.from('requests').select('*', { count: 'exact', head: true }).eq('status', 'PENDING');
     return count || 0;
 };
 
 export const clearRequests = async () => {
-    await supabase.from('excuse_requests').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('requests').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 };
 
 export const uploadFile = async (file: File): Promise<string> => {
@@ -210,7 +215,6 @@ export const uploadFile = async (file: File): Promise<string> => {
 // --- Attendance ---
 
 export const saveAttendanceRecord = async (record: AttendanceRecord): Promise<void> => {
-    // Check if record exists for this day/class
     const { data: existing } = await supabase.from('attendance_records')
         .select('id')
         .eq('date', record.date)
@@ -266,9 +270,8 @@ export const getAttendanceRecords = async (): Promise<AttendanceRecord[]> => {
     }));
 };
 
-export const getStudentAttendanceHistory = async (studentId: string, grade: string, className: string): Promise<{ date: string, status: AttendanceStatus }[]> => {
-    const { data, error } = await supabase.from('attendance_records')
-        .select('date, records');
+export const getStudentAttendanceHistory = async (studentId: string, grade?: string, className?: string): Promise<{ date: string, status: AttendanceStatus }[]> => {
+    const { data, error } = await supabase.from('attendance_records').select('date, records');
     
     if (error || !data) return [];
     
@@ -309,14 +312,10 @@ export const getDailyAttendanceReport = async (date: string) => {
 };
 
 export const getConsecutiveAbsences = async () => {
-    // Logic to find students with 3+ consecutive unexcused absences
-    // For simplicity, returning mock or empty, as complex logic is needed.
-    // In real app, calculate from getAttendanceRecords
     return []; 
 };
 
 export const resolveAbsenceAlert = async (studentId: string, action: string, note?: string) => {
-    // Log action
     await supabase.from('risk_history').insert({
         student_id: studentId,
         action_type: action,
@@ -331,7 +330,7 @@ export const getRiskHistory = async () => {
     return data.map((d: any) => ({
         id: d.id,
         studentId: d.student_id,
-        studentName: d.student_name || '', // Assuming joined or stored
+        studentName: d.student_name || '', 
         grade: d.grade || '',
         action_type: d.action_type,
         notes: d.notes,
@@ -345,8 +344,11 @@ export const clearAttendance = async () => {
 
 // --- Behavior ---
 
-export const getBehaviorRecords = async (): Promise<BehaviorRecord[]> => {
-    const { data, error } = await supabase.from('behavior_records').select('*');
+export const getBehaviorRecords = async (studentId?: string): Promise<BehaviorRecord[]> => {
+    let query = supabase.from('behavior_records').select('*');
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query;
+    
     if (error) return [];
     return data.map((r: any) => ({
         id: r.id,
@@ -479,14 +481,15 @@ export const acknowledgeObservation = async (id: string, feedback: string) => {
 
 export const getStaffUsers = async (force = false): Promise<StaffUser[]> => {
     if (!force && staffCache) return staffCache;
-    const { data, error } = await supabase.from('staff_users').select('*');
+    const { data, error } = await supabase.from('staff').select('*');
     if (error) return [];
+    
     staffCache = data.map((u: any) => ({
         id: u.id,
         name: u.name,
         passcode: u.passcode,
-        assignments: u.assignments, 
-        permissions: u.permissions 
+        assignments: safeParseJSON(u.assignments) as ClassAssignment[],
+        permissions: safeParseJSON(u.permissions) as string[]
     }));
     return staffCache;
 };
@@ -494,7 +497,7 @@ export const getStaffUsers = async (force = false): Promise<StaffUser[]> => {
 export const getStaffUsersSync = () => staffCache;
 
 export const addStaffUser = async (user: StaffUser) => {
-    await supabase.from('staff_users').insert({
+    await supabase.from('staff').insert({
         name: user.name,
         passcode: user.passcode,
         assignments: user.assignments,
@@ -504,7 +507,7 @@ export const addStaffUser = async (user: StaffUser) => {
 };
 
 export const updateStaffUser = async (user: StaffUser) => {
-    await supabase.from('staff_users').update({
+    await supabase.from('staff').update({
         name: user.name,
         passcode: user.passcode,
         assignments: user.assignments,
@@ -514,24 +517,30 @@ export const updateStaffUser = async (user: StaffUser) => {
 };
 
 export const deleteStaffUser = async (id: string) => {
-    await supabase.from('staff_users').delete().eq('id', id);
+    await supabase.from('staff').delete().eq('id', id);
     invalidateCache();
 };
 
 export const authenticateStaff = async (passcode: string): Promise<StaffUser | null> => {
-    const { data, error } = await supabase.from('staff_users').select('*').eq('passcode', passcode).single();
+    const { data, error } = await supabase.from('staff').select('*').eq('passcode', passcode).single();
     if (error || !data) return null;
     return {
         id: data.id,
         name: data.name,
         passcode: data.passcode,
-        assignments: data.assignments,
-        permissions: data.permissions
+        assignments: safeParseJSON(data.assignments) as ClassAssignment[],
+        permissions: safeParseJSON(data.permissions) as string[]
     };
 };
 
 export const getAvailableClassesForGrade = async (grade: string): Promise<string[]> => {
-    return ['أ', 'ب', 'ج', 'د', 'هـ', 'و'];
+    const { data, error } = await supabase.from('students').select('class_name').eq('grade', grade);
+    if (error || !data) return [];
+    return Array.from(new Set(data.map((item: any) => item.class_name as string))).filter(Boolean).sort();
+};
+
+export const getExistingGrades = async (): Promise<string[]> => {
+    return GRADES;
 };
 
 // --- Notifications ---
@@ -727,6 +736,7 @@ export const bookAppointment = async (details: any): Promise<Appointment> => {
         visitReason: data.visit_reason,
         status: data.status,
         createdAt: data.created_at,
+        arrivedAt: data.arrived_at,
         slot: {
             id: data.slot.id,
             date: data.slot.date,
@@ -968,14 +978,17 @@ export const getAIConfig = async () => {
 
 export const generateSmartContent = async (prompt: string, context?: string, modelId: string = 'gemini-2.5-flash'): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-    const model = ai.getGenerativeModel({ model: modelId });
+    const model = ai.models;
     
     let fullPrompt = prompt;
     if (context) fullPrompt = `Context: ${context}\n\nTask: ${prompt}`;
     
     try {
-        const result = await model.generateContent(fullPrompt);
-        return result.response.text();
+        const result = await model.generateContent({
+            model: modelId,
+            contents: fullPrompt
+        });
+        return result.text || "No response text";
     } catch (e) {
         console.error("AI Generation Error", e);
         return "تعذر توليد النص. يرجى المحاولة لاحقاً.";

@@ -187,7 +187,6 @@ const Submission: React.FC = () => {
               attachmentName: file.name,
               attachmentUrl: attachmentUrl, 
               status: RequestStatus.PENDING,
-              submissionDate: new Date().toISOString(),
             };
             await addRequest(newRequest);
         }

@@ -57,7 +57,7 @@ const StaffRequests: React.FC = () => {
   useEffect(() => {
     if (selectedReq) {
       setLoadingHistory(true);
-      getStudentAttendanceHistory(selectedReq.studentId, selectedReq.grade, selectedReq.className)
+      getStudentAttendanceHistory(selectedReq.studentId)
         .then(setStudentHistory)
         .catch(e => console.error(e))
         .finally(() => setLoadingHistory(false));
@@ -244,13 +244,8 @@ const StaffRequests: React.FC = () => {
               {/* Modal Header */}
               <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
                  <div className="flex items-center gap-3">
-                    <div className="bg-blue-50 p-2 rounded-lg text-blue-900">
-                        <User size={20} />
-                    </div>
-                    <div>
-                        <h3 className="font-bold text-slate-900 text-lg">تفاصيل العذر</h3>
-                        <p className="text-xs text-slate-500">#{selectedReq.id.slice(-6)}</p>
-                    </div>
+                    <div className="bg-blue-50 p-2 rounded-lg text-blue-900"><User size={20} /></div>
+                    <div><h3 className="font-bold text-slate-900 text-lg">تفاصيل العذر</h3><p className="text-xs text-slate-500">#{selectedReq.id.slice(-6)}</p></div>
                  </div>
                  <button onClick={() => setSelectedReq(null)} className="text-slate-400 hover:text-red-500 bg-slate-50 hover:bg-red-50 p-2 rounded-full transition-colors">
                     <X size={20} />

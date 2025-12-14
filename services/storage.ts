@@ -212,23 +212,26 @@ export const uploadFile = async (file: File): Promise<string> => {
     return publicData.publicUrl;
 };
 
-// --- Attendance ---
+// --- Attendance (Table: attendance) ---
 
 export const saveAttendanceRecord = async (record: AttendanceRecord): Promise<void> => {
-    const { data: existing } = await supabase.from('attendance_records')
+    const { data: existing } = await supabase.from('attendance')
         .select('id')
         .eq('date', record.date)
         .eq('grade', record.grade)
         .eq('class_name', record.className)
         .single();
 
+    // The 'records' field is stored as JSON string in some setups, or JSONB. 
+    // Supabase JS handles JSONB automatically if the column type is JSONB.
+    // If it's Text/String, we might need to stringify. Assuming JSONB/JSON column type here for 'records'.
     if (existing) {
-        await supabase.from('attendance_records').update({
-            records: record.records,
+        await supabase.from('attendance').update({
+            records: record.records, // Supabase client should handle object -> json
             staff_id: record.staffId
         }).eq('id', existing.id);
     } else {
-        await supabase.from('attendance_records').insert({
+        await supabase.from('attendance').insert({
             date: record.date,
             grade: record.grade,
             class_name: record.className,
@@ -239,7 +242,7 @@ export const saveAttendanceRecord = async (record: AttendanceRecord): Promise<vo
 };
 
 export const getAttendanceRecordForClass = async (date: string, grade: string, className: string): Promise<AttendanceRecord | null> => {
-    const { data, error } = await supabase.from('attendance_records')
+    const { data, error } = await supabase.from('attendance')
         .select('*')
         .eq('date', date)
         .eq('grade', grade)
@@ -253,12 +256,12 @@ export const getAttendanceRecordForClass = async (date: string, grade: string, c
         grade: data.grade,
         className: data.class_name,
         staffId: data.staff_id,
-        records: data.records
+        records: safeParseJSON(data.records) // Always parse safely
     };
 };
 
 export const getAttendanceRecords = async (): Promise<AttendanceRecord[]> => {
-    const { data, error } = await supabase.from('attendance_records').select('*');
+    const { data, error } = await supabase.from('attendance').select('*');
     if (error) return [];
     return data.map((r: any) => ({
         id: r.id,
@@ -266,18 +269,19 @@ export const getAttendanceRecords = async (): Promise<AttendanceRecord[]> => {
         grade: r.grade,
         className: r.class_name,
         staffId: r.staff_id,
-        records: r.records
+        records: safeParseJSON(r.records) // Always parse safely
     }));
 };
 
 export const getStudentAttendanceHistory = async (studentId: string, grade?: string, className?: string): Promise<{ date: string, status: AttendanceStatus }[]> => {
-    const { data, error } = await supabase.from('attendance_records').select('date, records');
+    const { data, error } = await supabase.from('attendance').select('date, records');
     
     if (error || !data) return [];
     
     const history: { date: string, status: AttendanceStatus }[] = [];
     data.forEach((row: any) => {
-        const studentRecord = row.records.find((r: any) => r.studentId === studentId);
+        const recs = safeParseJSON(row.records); 
+        const studentRecord = recs.find((r: any) => r.studentId === studentId);
         if (studentRecord) {
             history.push({ date: row.date, status: studentRecord.status });
         }
@@ -286,14 +290,15 @@ export const getStudentAttendanceHistory = async (studentId: string, grade?: str
 };
 
 export const getDailyAttendanceReport = async (date: string) => {
-    const { data, error } = await supabase.from('attendance_records').select('*').eq('date', date);
+    const { data, error } = await supabase.from('attendance').select('*').eq('date', date);
     if (error) return { totalPresent: 0, totalAbsent: 0, totalLate: 0, details: [] };
 
     let totalPresent = 0, totalAbsent = 0, totalLate = 0;
     const details: any[] = [];
 
     data.forEach((row: any) => {
-        row.records.forEach((rec: any) => {
+        const recs = safeParseJSON(row.records);
+        recs.forEach((rec: any) => {
             if (rec.status === 'PRESENT') totalPresent++;
             else if (rec.status === 'ABSENT') totalAbsent++;
             else if (rec.status === 'LATE') totalLate++;
@@ -339,7 +344,7 @@ export const getRiskHistory = async () => {
 };
 
 export const clearAttendance = async () => {
-    await supabase.from('attendance_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('attendance').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 }
 
 // --- Behavior ---
@@ -536,7 +541,9 @@ export const authenticateStaff = async (passcode: string): Promise<StaffUser | n
 export const getAvailableClassesForGrade = async (grade: string): Promise<string[]> => {
     const { data, error } = await supabase.from('students').select('class_name').eq('grade', grade);
     if (error || !data) return [];
-    return Array.from(new Set(data.map((item: any) => item.class_name as string))).filter(Boolean).sort();
+    const rows = data as any[];
+    const classNames = rows.map((item: any) => item.class_name as string).filter((c): c is string => !!c);
+    return Array.from(new Set(classNames)).sort();
 };
 
 export const getExistingGrades = async (): Promise<string[]> => {

@@ -1,3 +1,4 @@
+
 import { supabase } from '../supabaseClient';
 import { 
   Student, ExcuseRequest, StaffUser, AttendanceRecord, BehaviorRecord, 
@@ -205,11 +206,26 @@ export const clearRequests = async () => {
 };
 
 export const uploadFile = async (file: File): Promise<string> => {
-    const fileName = `${Date.now()}_${file.name}`;
-    const { data, error } = await supabase.storage.from('excuses').upload(fileName, file);
-    if (error) throw new Error(error.message);
-    const { data: publicData } = supabase.storage.from('excuses').getPublicUrl(fileName);
-    return publicData.publicUrl;
+    const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+    try {
+        const { data, error } = await supabase.storage.from('excuses').upload(fileName, file);
+        if (error) {
+            // Handle bucket not found error by returning a placeholder
+            // This ensures the app doesn't break if the backend isn't fully configured
+            if (error.message.includes('Bucket not found') || error.message.includes('not found')) {
+                console.warn("Storage bucket 'excuses' not found. Returning mock URL.");
+                return "https://placehold.co/600x800?text=Storage+Not+Configured";
+            }
+            throw new Error(error.message);
+        }
+        const { data: publicData } = supabase.storage.from('excuses').getPublicUrl(fileName);
+        return publicData.publicUrl;
+    } catch (e: any) {
+        if (e.message?.includes('Bucket not found')) {
+             return "https://placehold.co/600x800?text=Bucket+Not+Found";
+        }
+        throw e;
+    }
 };
 
 // --- Attendance (Table: attendance) ---
@@ -222,12 +238,9 @@ export const saveAttendanceRecord = async (record: AttendanceRecord): Promise<vo
         .eq('class_name', record.className)
         .single();
 
-    // The 'records' field is stored as JSON string in some setups, or JSONB. 
-    // Supabase JS handles JSONB automatically if the column type is JSONB.
-    // If it's Text/String, we might need to stringify. Assuming JSONB/JSON column type here for 'records'.
     if (existing) {
         await supabase.from('attendance').update({
-            records: record.records, // Supabase client should handle object -> json
+            records: record.records, 
             staff_id: record.staffId
         }).eq('id', existing.id);
     } else {

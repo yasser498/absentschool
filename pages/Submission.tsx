@@ -136,9 +136,11 @@ const Submission: React.FC = () => {
       const current = new Date(startDateStr);
       const end = new Date(endDateStr);
       let count = 0;
-      while (current <= end && count < 30) {
+      // Increased safety limit to 60 days
+      while (current <= end && count < 60) {
           const day = current.getDay();
-          if (day !== 5 && day !== 6) { // Skip Fri/Sat
+          // Exclude Friday (5) and Saturday (6)
+          if (day !== 5 && day !== 6) {
               dates.push(new Date(current).toISOString().split('T')[0]);
           }
           current.setDate(current.getDate() + 1);
@@ -151,18 +153,28 @@ const Submission: React.FC = () => {
     e.preventDefault();
     
     if (!selectedStudentId || !reason || !date || !file) return;
+    
+    // Single day weekend check
+    if (!isMultiDay) {
+        const d = new Date(date);
+        const day = d.getDay();
+        if (day === 5 || day === 6) {
+            alert("لا يمكن تقديم عذر في عطلة نهاية الأسبوع (الجمعة والسبت).");
+            return;
+        }
+    }
+
     if (isMultiDay && !endDate) { alert("يرجى تحديد تاريخ نهاية الغياب."); return; }
     if (isMultiDay && new Date(endDate) < new Date(date)) { alert("تاريخ النهاية يجب أن يكون بعد تاريخ البداية."); return; }
 
-    // Logic similar to previous implementation
     let datesToSubmit: string[] = [];
     if (isMultiDay) {
         datesToSubmit = getDatesInRange(date, endDate);
-        if (datesToSubmit.length === 0) { alert("الفترة المحددة لا تحتوي على أيام دراسية."); return; }
+        if (datesToSubmit.length === 0) { 
+            alert("الفترة المحددة تحتوي فقط على أيام عطلة نهاية أسبوع، أو التواريخ غير صحيحة."); 
+            return; 
+        }
     } else {
-        const selectedDateObj = new Date(date);
-        const day = selectedDateObj.getDay(); 
-        if (day === 5 || day === 6) { alert("لا يمكن تقديم عذر في أيام العطلة."); return; }
         datesToSubmit = [date];
     }
 
@@ -171,9 +183,20 @@ const Submission: React.FC = () => {
     try {
       const student = students.find(s => s.id === selectedStudentId);
       if (student) {
-        const attachmentUrl = await uploadFile(file);
-        if (!attachmentUrl) throw new Error("Upload failed");
+        // 1. Upload File
+        let attachmentUrl = "";
+        try {
+            attachmentUrl = await uploadFile(file);
+        } catch (uploadError) {
+            console.error("Upload Error:", uploadError);
+            alert("فشل رفع المرفق. يرجى المحاولة مرة أخرى أو اختيار ملف أصغر.");
+            setLoading(false);
+            return;
+        }
 
+        if (!attachmentUrl) throw new Error("Upload failed (no URL)");
+
+        // 2. Create Requests
         for (const d of datesToSubmit) {
             const newRequest: ExcuseRequest = {
               id: '', 
@@ -191,19 +214,16 @@ const Submission: React.FC = () => {
             await addRequest(newRequest);
         }
         setStep(2); 
+      } else {
+          alert("خطأ في بيانات الطالب. يرجى التحديث والمحاولة مرة أخرى.");
       }
-    } catch (e) {
-      alert("حدث خطأ أثناء الإرسال. تأكد من الاتصال.");
+    } catch (e: any) {
+      console.error("Submission Error:", e);
+      alert(`حدث خطأ أثناء إرسال الطلب: ${e.message || 'تأكد من الاتصال بالإنترنت'}`);
     } finally {
       setLoading(false);
     }
   };
-
-  const today = new Date();
-  const maxDate = today.toISOString().split('T')[0];
-  const minDateObj = new Date();
-  minDateObj.setDate(today.getDate() - 30); 
-  const minDate = minDateObj.toISOString().split('T')[0];
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-20">
@@ -302,7 +322,8 @@ const Submission: React.FC = () => {
                             <div>
                                 <label className="text-xs font-bold text-slate-500 mb-1.5 block">تاريخ الغياب (البداية)</label>
                                 <div className="relative">
-                                    <input type="date" required min={minDate} max={maxDate} value={date} disabled={isDateLocked} onChange={(e) => setDate(e.target.value)} className="w-full p-3 pl-10 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-100 disabled:bg-slate-100 disabled:text-slate-400" />
+                                    {/* Removed min/max constraints, but validation checks for weekends */}
+                                    <input type="date" required value={date} disabled={isDateLocked} onChange={(e) => setDate(e.target.value)} className="w-full p-3 pl-10 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-100 disabled:bg-slate-100 disabled:text-slate-400" />
                                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 </div>
                             </div>
@@ -310,9 +331,10 @@ const Submission: React.FC = () => {
                                 <div className="animate-fade-in">
                                     <label className="text-xs font-bold text-slate-500 mb-1.5 block">تاريخ النهاية (إلى)</label>
                                     <div className="relative">
-                                        <input type="date" required min={date} max={maxDate} value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full p-3 pl-10 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-100" />
+                                        <input type="date" required min={date} value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full p-3 pl-10 bg-slate-50 border-none rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-purple-100" />
                                         <CalendarDays className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                     </div>
+                                    <p className="text-[10px] text-slate-400 mt-1 mr-1">سيتم استبعاد أيام الجمعة والسبت تلقائياً</p>
                                 </div>
                             )}
                         </div>

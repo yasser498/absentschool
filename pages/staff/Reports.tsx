@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import * as ReactRouterDOM from 'react-router-dom';
 import { Calendar, BarChart2, Users, AlertCircle, Clock, CheckCircle, School, ChevronDown, Loader2, Printer, PieChart as PieIcon, TrendingUp, ArrowUpRight, Grid } from 'lucide-react';
@@ -58,11 +59,13 @@ const StaffReports: React.FC = () => {
         setDateRequests(reqs);
         
         const assignedClasses = currentUser.assignments || [];
-        const filteredDetails = data.details.filter(d => 
+        
+        // 1. Get all records for my classes (Used for Stats Calculation)
+        const allMyRecords = data.details.filter(d => 
             assignedClasses.some(a => a.grade === d.grade && a.className === d.className)
         );
 
-        // Calculate Totals per teacher
+        // Calculate Totals per teacher based on ALL records
         const assignedStudents = allStudents.filter(s => 
             assignedClasses.some(a => a.grade === s.grade && a.className === s.className)
         );
@@ -71,28 +74,31 @@ const StaffReports: React.FC = () => {
         let totalAbsent = 0;
         let totalLate = 0;
         
-        filteredDetails.forEach(d => {
+        allMyRecords.forEach(d => {
             if (d.status === AttendanceStatus.ABSENT) totalAbsent++;
             if (d.status === AttendanceStatus.LATE) totalLate++;
         });
 
         const totalPresent = Math.max(0, assignedStudentsCount - totalAbsent - totalLate);
 
+        // 2. Filter for Display (Show ONLY Absent and Late)
+        const displayDetails = allMyRecords.filter(d => d.status !== AttendanceStatus.PRESENT);
+
         setReportData({
             totalPresent,
             totalAbsent,
             totalLate,
-            details: filteredDetails
+            details: displayDetails // Only show absent/late in the table
         });
 
         // Calculate Daily Summary PER CLASS
         const summary = assignedClasses.map(cls => {
              const classStudentsCount = assignedStudents.filter(s => s.grade === cls.grade && s.className === cls.className).length;
-             const absents = filteredDetails.filter(d => d.grade === cls.grade && d.className === cls.className && d.status === AttendanceStatus.ABSENT).length;
-             const lates = filteredDetails.filter(d => d.grade === cls.grade && d.className === cls.className && d.status === AttendanceStatus.LATE).length;
-             const present = Math.max(0, classStudentsCount - absents - lates); // Simplified logic
+             const absents = allMyRecords.filter(d => d.grade === cls.grade && d.className === cls.className && d.status === AttendanceStatus.ABSENT).length;
+             const lates = allMyRecords.filter(d => d.grade === cls.grade && d.className === cls.className && d.status === AttendanceStatus.LATE).length;
+             const present = Math.max(0, classStudentsCount - absents - lates);
              
-             // Attendance Rate (Usually includes Late)
+             // Attendance Rate
              const rate = classStudentsCount > 0 ? Math.round(((classStudentsCount - absents) / classStudentsCount) * 100) : 0;
              const absentRate = classStudentsCount > 0 ? Math.round((absents / classStudentsCount) * 100) : 0;
              const lateRate = classStudentsCount > 0 ? Math.round((lates / classStudentsCount) * 100) : 0;
@@ -159,7 +165,6 @@ const StaffReports: React.FC = () => {
 
         myRecords.forEach(record => {
             const classKey = `${record.grade} - ${record.className}`;
-            // If class assignment changed, key might not exist in init, so safe check
             if (!classStats[classKey]) classStats[classKey] = { name: classKey, grade: record.grade, className: record.className, absent: 0, late: 0, total: 0, present: 0 };
 
             const dayName = new Date(record.date).toLocaleDateString('ar-SA', { weekday: 'long' });
@@ -309,22 +314,25 @@ const StaffReports: React.FC = () => {
                     </tr>
                     </thead>
                     <tbody>
-                    {reportData.details.map((d, idx) => {
-                        const status = getExcuseStatus(d.studentId, d.studentName);
-                        return (
-                        <tr key={idx}>
-                            <td className="border p-2">{d.studentName}</td>
-                            <td className="border p-2">{d.grade}</td>
-                            <td className="border p-2">{d.className}</td>
-                            <td className="border p-2">{d.status === AttendanceStatus.ABSENT ? 'غائب' : 'متأخر'}</td>
-                            <td className="border p-2">
-                                {status === RequestStatus.APPROVED ? 'مقبول ✅' : 
-                                 status === RequestStatus.REJECTED ? 'مرفوض ❌' : 
-                                 status === RequestStatus.PENDING ? 'قيد المراجعة ⏳' : '-'}
-                            </td>
-                        </tr>
-                    )})}
-                    {reportData.details.length === 0 && (
+                    {reportData.details.length > 0 ? (
+                        reportData.details.map((d, idx) => {
+                            const status = getExcuseStatus(d.studentId, d.studentName);
+                            return (
+                            <tr key={idx}>
+                                <td className="border p-2">{d.studentName}</td>
+                                <td className="border p-2">{d.grade}</td>
+                                <td className="border p-2">{d.className}</td>
+                                <td className="border p-2">
+                                    {d.status === AttendanceStatus.ABSENT ? 'غائب' : 'متأخر'}
+                                </td>
+                                <td className="border p-2">
+                                    {status === RequestStatus.APPROVED ? 'مقبول ✅' : 
+                                     status === RequestStatus.REJECTED ? 'مرفوض ❌' : 
+                                     status === RequestStatus.PENDING ? 'قيد المراجعة ⏳' : '-'}
+                                </td>
+                            </tr>
+                        )})
+                    ) : (
                         <tr><td colSpan={5} className="border p-4 text-center">لا يوجد غياب أو تأخر مسجل للفصول المسندة</td></tr>
                     )}
                     </tbody>
@@ -420,10 +428,11 @@ const StaffReports: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Detailed List */}
+                        {/* Detailed List (Filtered: Absent & Late Only) */}
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100">
-                                <h3 className="font-bold text-slate-800">قائمة الطلاب (فصولي فقط)</h3>
+                            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                                <h3 className="font-bold text-slate-800">قائمة الغياب والتأخر</h3>
+                                <span className="text-xs bg-white border px-2 py-1 rounded text-slate-500">يظهر فقط الغائبين والمتأخرين</span>
                             </div>
                             
                             {reportData.details.length === 0 ? (
@@ -452,9 +461,7 @@ const StaffReports: React.FC = () => {
                                                 <td className="p-4 text-slate-600">{d.className}</td>
                                                 <td className="p-4">
                                                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                                        d.status === AttendanceStatus.ABSENT 
-                                                        ? 'bg-red-100 text-red-700' 
-                                                        : 'bg-amber-100 text-amber-700'
+                                                        d.status === AttendanceStatus.ABSENT ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
                                                     }`}>
                                                         {d.status === AttendanceStatus.ABSENT ? 'غائب' : 'متأخر'}
                                                     </span>

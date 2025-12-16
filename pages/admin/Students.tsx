@@ -171,11 +171,13 @@ const Students: React.FC = () => {
   // --- Excel Logic ---
   const mapCodeToGrade = (code: string | number): string => {
     const c = code ? code.toString().trim() : '';
-    if (c === '725' || c === '0725') return 'الأول متوسط';
-    if (c === '825' || c === '0825') return 'الثاني متوسط';
-    if (c === '925' || c === '0925') return 'الثالث متوسط';
+    // Map common codes or names
+    if (c === '725' || c === '0725' || c.includes('أول')) return 'الأول متوسط';
+    if (c === '825' || c === '0825' || c.includes('ثاني')) return 'الثاني متوسط';
+    if (c === '925' || c === '0925' || c.includes('ثالث')) return 'الثالث متوسط';
     if (GRADES.includes(c)) return c;
-    return ''; 
+    // Return original if no mapping found (will be selectable later)
+    return c || GRADES[0]; 
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,40 +187,89 @@ const Students: React.FC = () => {
 
     setProcessingFile(true);
     try {
+        // 1. Fetch current students from DB to compare for deletions
+        // Force true to get latest DB state
+        const currentDbStudents = await getStudents(true); 
+
         const arrayBuffer = await file.arrayBuffer();
         const wb = XLSX.read(arrayBuffer, { type: 'array' });
-        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         
-        if (data.length === 0) { alert("الملف فارغ!"); return; }
+        // Target Sheet2 or the second sheet
+        let ws = wb.Sheets['Sheet2'];
+        if (!ws && wb.SheetNames.length > 1) {
+             ws = wb.Sheets[wb.SheetNames[1]];
+        }
+        
+        if (!ws) { 
+            alert("لم يتم العثور على ورقة العمل 'Sheet2' في الملف."); 
+            return; 
+        }
+
+        // Parse Options:
+        // header: "A" -> Maps columns to A, B, C, D, E, F...
+        // range: 4 -> Skips rows 0, 1, 2, 3. Starts reading data from Row 5.
+        // (User said Headers are Row 4, so data starts Row 5)
+        const data = XLSX.utils.sheet_to_json(ws, { 
+            header: "A", 
+            range: 4, 
+            raw: false // Force string conversion
+        });
+        
+        if (data.length === 0) { alert("الملف فارغ أو التنسيق غير مطابق!"); return; }
 
         const toUpsert: Student[] = [];
-        data.forEach((row: any) => {
-            const name = row['الاسم'] || row['name'] || row['Name'];
-            const studentIdRaw = row['السجل المدني'] || row['الهوية'] || row['studentId'] || row['ID'];
-            const gradeRaw = row['الصف'] || row['grade'] || row['Grade'];
-            const classRaw = row['الفصل'] || row['className'] || row['Class'];
-            const phone = row['الجوال'] || row['رقم الجوال'] || row['phone'] || '';
+        const fileStudentIds = new Set<string>();
 
-            if (name && studentIdRaw) {
+        data.forEach((row: any) => {
+            // Columns Mapping as requested:
+            // B: Phone, C: Class, D: Grade, E: Name, F: Student ID
+            const phone = row['B'] ? row['B'].toString().trim() : '';
+            const className = row['C'] ? row['C'].toString().trim() : '';
+            const gradeRaw = row['D'] ? row['D'].toString().trim() : '';
+            const name = row['E'] ? row['E'].toString().trim() : '';
+            const studentId = row['F'] ? row['F'].toString().trim() : '';
+
+            if (name && studentId) {
+                const grade = mapCodeToGrade(gradeRaw);
+                
                 toUpsert.push({
-                    id: '',
-                    name: name.toString().trim(),
-                    studentId: studentIdRaw.toString().trim(),
-                    grade: mapCodeToGrade(gradeRaw) || GRADES[0],
-                    className: classRaw ? classRaw.toString().trim() : '1',
-                    phone: phone.toString().trim()
+                    id: '', // Handled by storage
+                    name,
+                    studentId,
+                    grade: grade || GRADES[0],
+                    className: className || '1',
+                    phone
                 });
+                
+                fileStudentIds.add(studentId);
             }
         });
 
-        if (toUpsert.length === 0) { alert("لا توجد بيانات صالحة."); return; }
+        if (toUpsert.length === 0) { alert("لا توجد بيانات صالحة (تأكد من الأعمدة B-F في Sheet2)."); return; }
         
-        if (window.confirm(`سيتم معالجة ${toUpsert.length} طالب. متابعة؟`)) {
-            await syncStudentsBatch(toUpsert, [], []); 
+        // Calculate Deletions: Students in DB but NOT in the Excel file
+        const toDeleteDbIds = currentDbStudents
+            .filter(s => !fileStudentIds.has(s.studentId))
+            .map(s => s.id);
+
+        const deleteMsg = toDeleteDbIds.length > 0 
+            ? `\n⚠️ سيتم حذف ${toDeleteDbIds.length} طالب موجودين في النظام ولكن غير موجودين في الملف.` 
+            : '';
+
+        if (window.confirm(`تم العثور على ${toUpsert.length} طالب في الملف.${deleteMsg}\n\nهل تريد المتابعة وتحديث قاعدة البيانات بالكامل؟`)) {
+            // Pass toUpsert for update/insert
+            // Pass toDeleteDbIds for deletion
+            await syncStudentsBatch(toUpsert, [], toDeleteDbIds); 
             await fetchStudents(true); 
-            alert("تمت العملية بنجاح!");
+            alert("تم تحديث البيانات بنجاح!");
         }
-    } catch (error: any) { alert(`خطأ: ${error.message}`); } finally { setProcessingFile(false); e.target.value = ''; }
+    } catch (error: any) { 
+        console.error(error);
+        alert(`خطأ: ${error.message}`); 
+    } finally { 
+        setProcessingFile(false); 
+        e.target.value = ''; 
+    }
   };
 
   const inputClasses = "w-full p-3 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl focus:ring-2 focus:ring-blue-900 outline-none transition-all font-bold text-sm";
